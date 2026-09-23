@@ -1,10 +1,12 @@
 """Convert a GMR motion .pkl to a tracking .npz and upload it to W&B as `motion.npz`.
 
 The .pkl is expected to contain ``fps``, ``root_pos`` (N, 3), ``root_rot``
-(N, 4, scipy xyzw) and ``dof_pos`` (N, 22, K1 joint order). It is resampled to
-the tracking env's control rate and replayed through forward kinematics to
-produce the ``joint_pos``/``joint_vel``/``body_*_w`` arrays consumed by mjlab's
-tracking ``MotionLoader``.
+(N, 4, scipy xyzw), and ``dof_pos`` in the selected robot's MuJoCo joint order.
+It is resampled to the tracking env's control rate and replayed through forward
+kinematics to produce the arrays consumed by mjlab's tracking ``MotionLoader``.
+
+GMR's ``booster_t1`` serial output has this schema and joint ordering, so it can
+be passed directly with ``--robot t1``.
 
 Defaults to entity `ww-booster-lab` and project `motion_upload`. The artifact
 name defaults to `<pkl-stem>-tracking` (e.g. `subject3.pkl` -> `subject3-tracking`).
@@ -15,7 +17,7 @@ from __future__ import annotations
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import Literal, cast
 
 import numpy as np
 import torch
@@ -27,6 +29,9 @@ from booster_mjlab.motion import MotionFile
 from booster_mjlab.tasks.tracking.config.k1.env_cfgs import (
     booster_k1_flat_tracking_env_cfg,
 )
+from booster_mjlab.tasks.tracking.config.t1.env_cfgs import (
+    booster_t1_flat_tracking_env_cfg,
+)
 from mjlab.entity import Entity
 from mjlab.scene import Scene
 from mjlab.sim.sim import Simulation
@@ -37,6 +42,7 @@ from mjlab.tasks.tracking.mdp.commands import MotionLoader as TrackingMotionLoad
 @dataclass(frozen=True)
 class Config:
     input_file: Path
+    robot: Literal["k1", "t1"] = "k1"
     artifact_name: str | None = None
     entity: str = "ww-booster-lab"
     project: str = "motion_upload"
@@ -62,8 +68,16 @@ class ResampledMotion:
         return self.joint_pos.shape[0]
 
 
-def _default_output_fps() -> float:
-    cfg = booster_k1_flat_tracking_env_cfg()
+def _tracking_env_cfg(robot: str, *, play: bool = False):
+    if robot == "k1":
+        return booster_k1_flat_tracking_env_cfg(play=play)
+    if robot == "t1":
+        return booster_t1_flat_tracking_env_cfg(play=play)
+    raise ValueError(f"Unsupported robot: {robot}")
+
+
+def _default_output_fps(robot: str) -> float:
+    cfg = _tracking_env_cfg(robot)
     step_dt = cfg.sim.mujoco.timestep * cfg.decimation
     return 1.0 / step_dt
 
@@ -137,8 +151,8 @@ def _quat_xyzw_to_wxyz(quat_xyzw: np.ndarray, device: torch.device) -> torch.Ten
     return torch.as_tensor(quat_wxyz, dtype=torch.float32, device=device).unsqueeze(0)
 
 
-def _build_scene_and_sim(device: str) -> tuple[Scene, Simulation, Entity]:
-    cfg = booster_k1_flat_tracking_env_cfg(play=True)
+def _build_scene_and_sim(device: str, robot_name: str) -> tuple[Scene, Simulation, Entity]:
+    cfg = _tracking_env_cfg(robot_name, play=True)
     cfg.scene.num_envs = 1
     scene = Scene(cfg.scene, device=device)
     sim = Simulation(num_envs=1, cfg=cfg.sim, model=scene.compile(), device=device)
@@ -209,8 +223,10 @@ def _run_forward_kinematics(
     return output
 
 
-def _validate_output(output_file: Path, robot: Entity, device: str) -> None:
-    cfg = booster_k1_flat_tracking_env_cfg(play=True)
+def _validate_output(
+    output_file: Path, robot: Entity, device: str, robot_name: str
+) -> None:
+    cfg = _tracking_env_cfg(robot_name, play=True)
     motion_cmd = cfg.commands["motion"]
     assert isinstance(motion_cmd, MotionCommandCfg)
     body_indexes = torch.tensor(
@@ -228,11 +244,21 @@ def _validate_output(output_file: Path, robot: Entity, device: str) -> None:
 
 
 def convert(cfg: Config, output_file: Path) -> None:
-    output_fps = cfg.output_fps if cfg.output_fps is not None else _default_output_fps()
+    output_fps = (
+        cfg.output_fps
+        if cfg.output_fps is not None
+        else _default_output_fps(cfg.robot)
+    )
     device = torch.device(cfg.device)
 
     print(f"[info] Loading motion file: {cfg.input_file}")
     motion_file = MotionFile.load(cfg.input_file)
+    expected_dofs = 22 if cfg.robot == "k1" else 23
+    if motion_file.dof_pos.shape[1] != expected_dofs:
+        raise ValueError(
+            f"{cfg.robot.upper()} expects {expected_dofs} joints, but input has "
+            f"{motion_file.dof_pos.shape[1]}."
+        )
     print(
         f"[info] Input frames={motion_file.num_frames}, input_fps={motion_file.fps:.6f}, "
         f"output_fps={output_fps:.6f}, speed_factor={cfg.speed_factor:.6f}"
@@ -246,12 +272,14 @@ def convert(cfg: Config, output_file: Path) -> None:
     )
     print(f"[info] Resampled frames={resampled.num_frames}")
 
-    scene, sim, robot = _build_scene_and_sim(device=cfg.device)
+    scene, sim, robot = _build_scene_and_sim(device=cfg.device, robot_name=cfg.robot)
     motion_npz = _run_forward_kinematics(resampled, scene, sim, robot)
     np.savez(output_file, **motion_npz)
 
     if cfg.validate:
-        _validate_output(output_file, robot=robot, device=cfg.device)
+        _validate_output(
+            output_file, robot=robot, device=cfg.device, robot_name=cfg.robot
+        )
 
 
 def run(cfg: Config) -> str:

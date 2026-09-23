@@ -95,6 +95,23 @@ def booster_t1_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     cfg.rewards["upper_body_posture"].params["asset_cfg"].joint_names = (
         r"aahead_.*", r".*_(shoulder|elbow)_.*", r"waist_yaw_joint",
     )
+    cfg.rewards["upper_body_posture"].params.update(
+        std_standing={
+            r"aahead_.*": 0.05,
+            r".*_(shoulder|elbow)_.*": 0.05,
+            r"waist_yaw_joint": 0.05,
+        },
+        std_walking={
+            r"aahead_.*": 0.10,
+            r".*_(shoulder|elbow)_.*": 0.15,
+            r"waist_yaw_joint": 0.10,
+        },
+        std_running={
+            r"aahead_.*": 0.20,
+            r".*_(shoulder|elbow)_.*": 0.35,
+            r"waist_yaw_joint": 0.25,
+        },
+    )
 
     if play:
         cfg.episode_length_s = int(1e9)
