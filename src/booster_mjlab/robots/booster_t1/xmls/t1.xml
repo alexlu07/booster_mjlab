@@ -36,8 +36,6 @@
   <worldbody>
     <light directional="true" diffuse=".4 .4 .4" specular="0.1 0.1 0.1" pos="0 0 5.0" dir="0 0 -1" castshadow="false" />
     <light directional="true" diffuse=".6 .6 .6" specular="0.2 0.2 0.2" pos="0 0 4" dir="0 0 -1" />
-    <geom name="ground" type="plane" pos="0 0 0" size="0 0 1" material="matplane" condim="1"/>
-
     <body name="trunk" pos="0 0 0.7">
       <inertial pos="0.055138 -1.42184e-06 0.105043" quat="0.999959 1.39867e-05 -0.00902028 -1.39205e-05" mass="11.7016" diaginertia="0.0915734 0.0768118 0.0556067"/>
       <site name='imu' size='0.01' pos='0.0 0.0 0.0' />
@@ -136,10 +134,12 @@
                   <joint name="left_ankle_pitch_joint" pos="0 0 0" axis="0 1 0" range="-0.87 0.35" armature="0.0679104"/>
                   <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.4 0.4 0.4 1." mesh="Ankle_Cross_Left"/>
                   <body name="left_ankle_roll_link" pos="0 0.00025 -0.012">
+                    <site name="left_foot" size="0.01"/>
+                    <site name="left_foot_sole" pos="0.0101079 0 -0.0214208" size="0.005"/>
                     <inertial pos="-0.000249 0 -0.00914" quat="0 0.651138 0 0.75896" mass="0.685" diaginertia="0.00269361 0.002385 0.00171539"/>
                     <joint name="left_ankle_roll_joint" pos="0 0 0" axis="1 0 0" range="-0.44 0.44" armature="0.02037312"/>
                     <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.4 0.4 0.4 1." mesh="left_foot_link"/>
-                    <geom size="0.112434 0.05 0.02183" pos="0.0101079 0 -0.0214208" type="box" rgba="0.4 0.4 0.4 0."/>
+                    <geom name="left_foot_collision" size="0.112434 0.05 0.02183" pos="0.0101079 0 -0.0214208" type="box" rgba="0.4 0.4 0.4 0."/>
                   </body>
                 </body>
               </body>
@@ -171,10 +171,12 @@
                   <joint name="right_ankle_pitch_joint" pos="0 0 0" axis="0 1 0" range="-0.87 0.35" armature="0.0679104"/>
                   <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.4 0.4 0.4 1." mesh="Ankle_Cross_Right"/>
                   <body name="right_ankle_roll_link" pos="0 -0.00025 -0.012">
+                    <site name="right_foot" size="0.01"/>
+                    <site name="right_foot_sole" pos="0.0101079 0 -0.0214208" size="0.005"/>
                     <inertial pos="-0.000248 0 -0.00914" quat="0 0.651138 0 0.75896" mass="0.685" diaginertia="0.00269361 0.002385 0.00171539"/>
                     <joint name="right_ankle_roll_joint" pos="0 0 0" axis="1 0 0" range="-0.44 0.44" armature="0.02037312"/>
                     <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.4 0.4 0.4 1." mesh="right_foot_link"/>
-                    <geom size="0.112434 0.05 0.02183" pos="0.0101079 0 -0.0214208" type="box" rgba="0.4 0.4 0.4 0."/>
+                    <geom name="right_foot_collision" size="0.112434 0.05 0.02183" pos="0.0101079 0 -0.0214208" type="box" rgba="0.4 0.4 0.4 0."/>
                   </body>
                 </body>
               </body>
