@@ -2,8 +2,8 @@
 
 # booster_mjlab
 
-booster_mjlab is an [mjlab](https://github.com/mujocolab/mjlab) integration for the Booster K1.
-It provides the K1 robot model, velocity and motion-tracking tasks, and an [Adversarial Motion Priors](https://arxiv.org/abs/2104.02180) (AMP) training pipeline that learns natural-looking gaits from motion capture data.
+booster_mjlab is an [mjlab](https://github.com/mujocolab/mjlab) integration for the Booster K1 and T1.
+It provides velocity and motion-tracking tasks, and an [Adversarial Motion Priors](https://arxiv.org/abs/2104.02180) (AMP) training pipeline that learns natural-looking gaits from motion capture data.
 
 Real-robot and simulation demos are on the [project page](https://intelligentroboticslab.github.io/booster_mjlab/),
 which also runs the velocity policy live in the browser (MuJoCo WebAssembly + the exported network).
@@ -49,6 +49,18 @@ The `-DA-` tasks train with left/right symmetry data augmentation. Drop `DA` fro
 The `-Muon-` tasks use the [Muon optimizer](https://kellerjordan.github.io/posts/muon/) (Jordan et al., 2024) for the
 actor and critic weight matrices. Drop `Muon` from the task ID for the Adam variant with otherwise identical settings.
 
+### T1 velocity tracking
+
+The serial-ankle T1 uses a full 23-joint policy. Its AMP discriminator observes the 12 leg joints plus base state, matching the K1 design: arms, head, and waist remain policy-controlled but are not AMP-scored. Provide T1 motion data explicitly; there is no bundled T1 AMP dataset.
+
+```bash
+uv run train Mjlab-Velocity-Flat-Amp-DA-Muon-Booster-T1 \
+    --agent.dataset-root /path/to/gmr_t1_motions \
+    --env.scene.num-envs 4096
+```
+
+`Flat`, `Rough`, Adam/Muon, AMP/non-AMP, and symmetry-augmentation variants use the same task naming as K1 with `Booster-T1` in place of `Booster-K1`.
+
 ### 2. Motion Imitation
 
 Train a Booster K1 to track motion capture clips on flat terrain. Motions are managed as WandB artifacts;
@@ -63,6 +75,13 @@ uv run play Mjlab-Tracking-Flat-Booster-K1 --wandb-run-path your-org/mjlab/run-i
 ```
 
 For a motion prepared with `csv_to_npz`, pass `--registry-name your-org/motions/motion_name` instead.
+
+For a serial T1 GMR clip, upload and train with:
+
+```bash
+uv run upload-motion --robot t1 --input-file /path/to/t1_motion.pkl --entity your-org
+uv run train Mjlab-Tracking-Flat-Booster-T1 --registry-name your-org/motion_upload/t1_motion-tracking:v0 --env.scene.num-envs 4096
+```
 
 ### 3. Browse Motion Data
 
@@ -91,7 +110,7 @@ dataset, retargeted onto the parallel-ankle K1:
 ## Tasks
 
 Velocity tasks come in `Flat` and `Rough` terrain variants, optionally with `-Amp-` (motion prior) and
-`-DA-` (symmetry data augmentation). Tasks suffixed `-Parallel` use the parallel-linkage ankle model of the K1.
+`-DA-` (symmetry data augmentation). Tasks suffixed `-Parallel` use the parallel-linkage ankle model of the K1; the first T1 pass is serial-ankle only.
 Tracking tasks run on flat terrain. List them all with:
 
 ```bash
