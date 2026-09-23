@@ -21,6 +21,7 @@ def with_amp_obs_group(
     augmentations: list[dict[str, object]] | None = None,
     dataset_transform: str | None = None,
     include_base_lin_vel: bool = False,
+    amp_joint_names: tuple[str, ...] | None = None,
 ):
     """Wraps the environment configuration for AMP tasks."""
     if cfg.curriculum is None:
@@ -37,7 +38,7 @@ def with_amp_obs_group(
 
     # Discriminator features cover the legs only; the arms and head are excluded
     # so their style from the dataset does not drive the style reward.
-    amp_joint_names = (
+    amp_joint_names = amp_joint_names or (
         r".*_Hip_.*",
         r".*_Knee_.*",
         r".*_Ankle_.*",

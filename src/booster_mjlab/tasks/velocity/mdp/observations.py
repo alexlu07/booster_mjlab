@@ -321,3 +321,85 @@ flip_k1_parallel_critic_obs_left_right = partial(
     flip_k1_critic_obs_left_right,
     inverted_indices=K1_PARALLEL_INVERTED_JOINT_INDICES,
 )
+
+
+# T1 has the K1 upper-body layout plus a central waist-yaw joint before the
+# two six-DoF legs. Keep this alongside the K1 implementation until a third
+# layout warrants a broader symmetry abstraction.
+T1_JOINT_DIM = 23
+T1_INVERTED_JOINT_INDICES: tuple[int, ...] = (
+    0, 3, 5, 7, 9, 10, 12, 13, 16, 18, 19, 22,
+)
+T1_POLICY_DIM = 6 + 3 * T1_JOINT_DIM + 3
+
+
+def _switch_t1_joints_left_right(
+    joints: torch.Tensor,
+    inverted_indices: tuple[int, ...] = T1_INVERTED_JOINT_INDICES,
+) -> torch.Tensor:
+    if joints.shape[1] != T1_JOINT_DIM:
+        raise ValueError(f"Expected {T1_JOINT_DIM} T1 joints, got {joints.shape[1]}.")
+    out = torch.zeros_like(joints)
+    out[:, :2] = joints[:, :2]
+    out[:, 2:6] = joints[:, 6:10]
+    out[:, 6:10] = joints[:, 2:6]
+    out[:, 10] = joints[:, 10]
+    out[:, 11:17] = joints[:, 17:23]
+    out[:, 17:23] = joints[:, 11:17]
+    out[:, list(inverted_indices)] *= -1.0
+    return out
+
+
+def flip_t1_action_left_right(action: torch.Tensor) -> torch.Tensor:
+    return _switch_t1_joints_left_right(action.clone())
+
+
+def flip_t1_policy_obs_left_right(obs: torch.Tensor) -> torch.Tensor:
+    if obs.shape[1] != T1_POLICY_DIM:
+        raise ValueError(f"Expected {T1_POLICY_DIM} T1 actor observations, got {obs.shape[1]}.")
+    out = obs.clone()
+    out[:, :3] *= out.new_tensor([-1.0, 1.0, -1.0])
+    out[:, 3:6] *= out.new_tensor([1.0, -1.0, 1.0])
+    joint_pos = 6
+    joint_vel = joint_pos + T1_JOINT_DIM
+    last_action = joint_vel + T1_JOINT_DIM
+    command = last_action + T1_JOINT_DIM
+    out[:, joint_pos:joint_vel] = _switch_t1_joints_left_right(out[:, joint_pos:joint_vel])
+    out[:, joint_vel:last_action] = _switch_t1_joints_left_right(out[:, joint_vel:last_action])
+    out[:, last_action:command] = _switch_t1_joints_left_right(out[:, last_action:command])
+    out[:, command:command + 3] *= out.new_tensor([1.0, -1.0, -1.0])
+    return out
+
+
+def flip_t1_critic_obs_left_right(obs: torch.Tensor) -> torch.Tensor:
+    if obs.shape[1] != T1_POLICY_DIM + CRITIC_EXTRA_DIM:
+        raise ValueError(f"Expected {T1_POLICY_DIM + CRITIC_EXTRA_DIM} T1 critic observations, got {obs.shape[1]}.")
+    out = obs.clone()
+    out[:, :T1_POLICY_DIM] = flip_t1_policy_obs_left_right(out[:, :T1_POLICY_DIM])
+    out[:, T1_POLICY_DIM:T1_POLICY_DIM + 3] *= out.new_tensor([1.0, -1.0, 1.0])
+    foot_height = T1_POLICY_DIM + 3
+    foot_air_time = foot_height + 2
+    foot_contact = foot_air_time + 2
+    foot_forces = foot_contact + 2
+    for start in (foot_height, foot_air_time, foot_contact):
+        out[:, [start, start + 1]] = out[:, [start + 1, start]]
+    out[:, foot_forces:foot_forces + 6] = out[:, [
+        foot_forces + 3, foot_forces + 4, foot_forces + 5,
+        foot_forces, foot_forces + 1, foot_forces + 2,
+    ]] * out.new_tensor([1.0, -1.0, 1.0, 1.0, -1.0, 1.0])
+    return out
+
+
+def augment_symmetries_t1(
+    env: VecEnv, obs: TensorDict | None, actions: torch.Tensor | None
+) -> tuple[TensorDict | None, torch.Tensor | None]:
+    """Apply left/right symmetry augmentation for serial T1."""
+    del env
+    if obs is not None:
+        actor, critic = obs["actor"], obs["critic"]
+        actor_aug = torch.cat((actor, flip_t1_policy_obs_left_right(actor)), dim=0)
+        critic_aug = torch.cat((critic, flip_t1_critic_obs_left_right(critic)), dim=0)
+        obs = TensorDict({"actor": actor_aug, "critic": critic_aug}, batch_size=(len(actor_aug),))
+    if actions is not None:
+        actions = torch.cat((actions, flip_t1_action_left_right(actions)), dim=0)
+    return obs, actions

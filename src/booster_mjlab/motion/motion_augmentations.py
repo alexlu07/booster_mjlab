@@ -73,6 +73,44 @@ def _k1_mirror_mapping() -> tuple[np.ndarray, np.ndarray]:
 
 
 _K1_INDEX_MAP, _K1_SIGN_MAP = _k1_mirror_mapping()
+
+_T1_JOINT_NAMES = [
+    "aahead_yaw_joint", "aahead_pitch_joint",
+    "left_shoulder_pitch_joint", "left_shoulder_roll_joint", "left_elbow_pitch_joint", "left_elbow_yaw_joint",
+    "right_shoulder_pitch_joint", "right_shoulder_roll_joint", "right_elbow_pitch_joint", "right_elbow_yaw_joint",
+    "waist_yaw_joint",
+    "left_hip_pitch_joint", "left_hip_roll_joint", "left_hip_yaw_joint", "left_knee_pitch_joint", "left_ankle_pitch_joint", "left_ankle_roll_joint",
+    "right_hip_pitch_joint", "right_hip_roll_joint", "right_hip_yaw_joint", "right_knee_pitch_joint", "right_ankle_pitch_joint", "right_ankle_roll_joint",
+]
+
+
+def _t1_mirror_mapping() -> tuple[np.ndarray, np.ndarray]:
+    names = {name: index for index, name in enumerate(_T1_JOINT_NAMES)}
+    index_map = np.arange(len(names))
+    sign_map = np.ones(len(names), dtype=np.float32)
+    pairs = [
+        ("aahead_yaw_joint", "aahead_yaw_joint", True),
+        ("left_shoulder_pitch_joint", "right_shoulder_pitch_joint", False),
+        ("left_shoulder_roll_joint", "right_shoulder_roll_joint", True),
+        ("left_elbow_pitch_joint", "right_elbow_pitch_joint", False),
+        ("left_elbow_yaw_joint", "right_elbow_yaw_joint", True),
+        ("waist_yaw_joint", "waist_yaw_joint", True),
+        ("left_hip_pitch_joint", "right_hip_pitch_joint", False),
+        ("left_hip_roll_joint", "right_hip_roll_joint", True),
+        ("left_hip_yaw_joint", "right_hip_yaw_joint", True),
+        ("left_knee_pitch_joint", "right_knee_pitch_joint", False),
+        ("left_ankle_pitch_joint", "right_ankle_pitch_joint", False),
+        ("left_ankle_roll_joint", "right_ankle_roll_joint", True),
+    ]
+    for left, right, negate in pairs:
+        left_index, right_index = names[left], names[right]
+        index_map[left_index], index_map[right_index] = right_index, left_index
+        if negate:
+            sign_map[left_index] = sign_map[right_index] = -1.0
+    return index_map, sign_map
+
+
+_T1_INDEX_MAP, _T1_SIGN_MAP = _t1_mirror_mapping()
 _MIRROR_MATRIX = np.diag([1.0, -1.0, 1.0])
 
 
@@ -150,6 +188,41 @@ class MirrorAugmentation:
             root_rot=flipped_root_rot,
             dof_pos=flipped_dof_pos,
             local_body_pos=flipped_local_body_pos,
+            link_body_list=motion_file.link_body_list,
+        )
+
+
+@dataclass(frozen=True)
+class T1MirrorAugmentation(MirrorAugmentation):
+    """Left/right reflection for the serial 23-DoF T1 motion layout."""
+
+    name: str = "t1_mirror"
+
+    def apply(self, motion_file: MotionFile) -> MotionFile:
+        if motion_file.dof_pos.shape[1] != len(_T1_INDEX_MAP):
+            raise ValueError(
+                "T1 mirror augmentation expects 23 T1 joints, got "
+                f"{motion_file.dof_pos.shape[1]}."
+            )
+        root_pos = motion_file.root_pos.copy()
+        root_pos[:, 1] *= -1.0
+        root_rot = [
+            Rotation.from_matrix(
+                _MIRROR_MATRIX @ Rotation.from_quat(quat).as_matrix() @ _MIRROR_MATRIX
+            ).as_quat()
+            for quat in motion_file.root_rot
+        ]
+        local_body_pos = motion_file.local_body_pos
+        if local_body_pos is not None and motion_file.link_body_list is not None:
+            body_map = _body_mirror_index_map(motion_file.link_body_list)
+            local_body_pos = local_body_pos[:, body_map, :].copy()
+            local_body_pos[:, :, 1] *= -1.0
+        return MotionFile(
+            fps=motion_file.fps,
+            root_pos=root_pos,
+            root_rot=root_rot,
+            dof_pos=motion_file.dof_pos[:, _T1_INDEX_MAP] * _T1_SIGN_MAP,
+            local_body_pos=local_body_pos,
             link_body_list=motion_file.link_body_list,
         )
 
@@ -259,6 +332,10 @@ def build_motion_augmentations(
 
         if normalized_name in {"mirror", "mirror_lr", "left_right_mirror"}:
             augmentations.append(MirrorAugmentation())
+            continue
+
+        if normalized_name in {"t1_mirror", "t1_mirror_lr"}:
+            augmentations.append(T1MirrorAugmentation())
             continue
 
         if normalized_name == "speed":
