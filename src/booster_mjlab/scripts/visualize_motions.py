@@ -133,6 +133,8 @@ class EditState:
     # Trim settings
     trim_start: int = 0
     trim_end: int | None = None  # None = end of clip
+    trim_frame_count: int = 0
+    """Playback-frame count used by the trim controls."""
 
     # Speed modification
     speed_factor: float = 1.0  # >1 = faster, <1 = slower
@@ -562,6 +564,27 @@ def apply_trim(motion_file: MotionFile, start: int, end: int | None) -> MotionFi
     )
 
 
+def _source_trim_bounds(
+    source_frames: int,
+    playback_frames: int,
+    start: int,
+    end: int | None,
+) -> tuple[int, int | None]:
+    """Map playback-frame trim bounds onto the source clip's frame range."""
+    if playback_frames <= 0 or playback_frames == source_frames:
+        return start, end
+
+    # Both ranges are half-open. Floor/ceil preserves every source sample that
+    # overlaps the selected playback interval, including a requested endpoint.
+    source_start = source_frames * start // playback_frames
+    source_end = (
+        None
+        if end is None
+        else (source_frames * end + playback_frames - 1) // playback_frames
+    )
+    return source_start, source_end
+
+
 def apply_speed_modification(motion_file: MotionFile, factor: float) -> MotionFile:
     """Apply speed modification by resampling the motion.
 
@@ -674,6 +697,7 @@ class FootState:
     lowest: np.ndarray  # (2, 3) lowest collision point per foot
     clearances: np.ndarray  # (2,) height of that point above the reference ground
     contacts: list[np.ndarray]  # per foot, the points at or below the ground
+    terrain_contacts: np.ndarray  # (2,) whether MuJoCo reports terrain contact
 
 
 def _thin_points(points: np.ndarray, spacing: float) -> np.ndarray:
@@ -694,21 +718,20 @@ def _geom_local_points(mj_model: mujoco.MjModel, geom_id: int) -> np.ndarray:
         count = int(mj_model.mesh_vertnum[mesh_id])
         return mj_model.mesh_vert[start : start + count].astype(np.float64)
 
-    # Fall back to the geom's local bounding box for primitives.
-    center = mj_model.geom_aabb[geom_id, :3]
-    half = mj_model.geom_aabb[geom_id, 3:]
+    # Primitive dimensions are expressed in the geom frame.  ``geom_aabb`` is
+    # body-frame data, so applying ``geom_xmat`` to it again gives the wrong
+    # answer whenever a geom has an offset or rotated parent body.
     signs = np.array(
         [(sx, sy, sz) for sx in (-1.0, 1.0) for sy in (-1.0, 1.0) for sz in (-1.0, 1.0)]
     )
-    return center + signs * half
+    return signs * mj_model.geom_size[geom_id]
 
 
 class FootGeometry:
     """Foot collision geometry, used for exact ground-clearance queries.
 
-    The home keyframe defines "standing on the ground": the collision meshes
-    may dip slightly below z=0 there, so that level is the reference ground
-    rather than z=0 itself.
+    The reference is the terrain plane in the compiled scene.  Falling back to
+    the home keyframe keeps the display usable for models without a plane.
     """
 
     def __init__(
@@ -717,11 +740,13 @@ class FootGeometry:
         geom_ids: list[list[int]],
         local_points: list[list[np.ndarray]],
         reference_z: float,
+        terrain_geom_ids: set[int],
     ) -> None:
         self.body_ids = body_ids
         self.geom_ids = geom_ids
         self.local_points = local_points
         self.reference_z = reference_z
+        self.terrain_geom_ids = terrain_geom_ids
 
     @classmethod
     def create(cls, mj_model: mujoco.MjModel) -> FootGeometry | None:
@@ -763,8 +788,26 @@ class FootGeometry:
             geom_ids.append(ids)
             local_points.append([_geom_local_points(mj_model, g) for g in ids])
 
-        geometry = cls(body_ids, geom_ids, local_points, reference_z=0.0)
-        geometry.reference_z = geometry._home_keyframe_z(mj_model)
+        terrain_geom_ids = {
+            geom_id
+            for geom_id in range(mj_model.ngeom)
+            if int(mj_model.geom_type[geom_id]) == int(mujoco.mjtGeom.mjGEOM_PLANE)
+        }
+        geometry = cls(
+            body_ids,
+            geom_ids,
+            local_points,
+            reference_z=0.0,
+            terrain_geom_ids=terrain_geom_ids,
+        )
+        if terrain_geom_ids:
+            # A plane's origin lies on its surface.  The viewer's flat-ground
+            # tasks have one such terrain plane at z=0.
+            geometry.reference_z = float(
+                min(mj_model.geom_pos[geom_id, 2] for geom_id in terrain_geom_ids)
+            )
+        else:
+            geometry.reference_z = geometry._home_keyframe_z(mj_model)
         return geometry
 
     def _home_keyframe_z(self, mj_model: mujoco.MjModel) -> float:
@@ -810,10 +853,21 @@ class FootGeometry:
             touching = points[points[:, 2] - self.reference_z <= CONTACT_TOLERANCE]
             contacts.append(_thin_points(touching, CONTACT_POINT_SPACING))
         lowest = np.array(lowest)
+        terrain_contacts = np.zeros(len(self.geom_ids), dtype=bool)
+        if self.terrain_geom_ids:
+            for contact_id in range(mj_data.ncon):
+                contact = mj_data.contact[contact_id]
+                pair = {int(contact.geom1), int(contact.geom2)}
+                if not pair & self.terrain_geom_ids:
+                    continue
+                for foot, ids in enumerate(self.geom_ids):
+                    if pair & set(ids):
+                        terrain_contacts[foot] = True
         return FootState(
             lowest=lowest,
             clearances=lowest[:, 2] - self.reference_z,
             contacts=contacts,
+            terrain_contacts=terrain_contacts,
         )
 
 
@@ -904,9 +958,16 @@ def compile_edits(
     """
     result = original
 
-    # 1. Apply trim
+    # 1. Apply trim. The editor uses visible playback frames while motion files
+    # retain their original sampling rate, commonly 30 Hz versus 50 Hz here.
     if edit_state.trim_start > 0 or edit_state.trim_end is not None:
-        result = apply_trim(result, edit_state.trim_start, edit_state.trim_end)
+        start, end = _source_trim_bounds(
+            result.num_frames,
+            edit_state.trim_frame_count,
+            edit_state.trim_start,
+            edit_state.trim_end,
+        )
+        result = apply_trim(result, start, end)
 
     # 2. Apply speed modification
     if abs(edit_state.speed_factor - 1.0) > 1e-6:
@@ -1209,18 +1270,19 @@ def contact_readout_html(state: FootState | None, message: str = "") -> str:
         return f'<div style="font-size:0.85em; padding:0.5em; opacity:0.7;">{message}</div>'
 
     rows = []
-    for label, clearance, contacts in zip(
-        FOOT_LABELS, state.clearances, state.contacts
+    for label, clearance, contacts, terrain_contact in zip(
+        FOOT_LABELS, state.clearances, state.contacts, state.terrain_contacts
     ):
         status = classify_contact(float(clearance))
         rgba = CONTACT_COLORS[status]
         color = "rgb({}, {}, {})".format(*(int(255 * c) for c in rgba[:3]))
         patch = f" · {len(contacts)} pts" if len(contacts) else ""
+        actual = " · MuJoCo contact" if terrain_contact else ""
         rows.append(
             f'<div style="display:flex; justify-content:space-between; gap:1em;">'
             f"<span>{label}</span>"
             f'<span style="color:{color};">'
-            f"{clearance * 1000:+.1f} mm · {status}{patch}</span>"
+            f"{clearance * 1000:+.1f} mm · {status}{patch}{actual}</span>"
             f"</div>"
         )
     note = (
@@ -1328,24 +1390,24 @@ def setup_viewer(
         trim_folder = server.gui.add_folder("Trim", expand_by_default=True)
         with trim_folder:
             trim_start_input = server.gui.add_number(
-                "Start Frame",
+                "Start Frame (timeline)",
                 initial_value=edit_state.trim_start,
                 min=0,
-                max=motion_holder[0].num_frames - 1,
+                max=edit_state.trim_frame_count - 1,
                 step=1,
-                hint="First frame to include (inclusive)",
+                hint="First visible timeline frame to include (inclusive)",
             )
             trim_end_input = server.gui.add_number(
-                "End Frame",
+                "End Frame (timeline)",
                 initial_value=(
                     edit_state.trim_end
                     if edit_state.trim_end is not None
-                    else motion_holder[0].num_frames
+                    else edit_state.trim_frame_count
                 ),
                 min=1,
-                max=motion_holder[0].num_frames,
+                max=edit_state.trim_frame_count,
                 step=1,
-                hint="Last frame to include (exclusive), 0 = end of clip",
+                hint="First visible timeline frame to exclude (exclusive)",
             )
             trim_reset_button = server.gui.add_button("Reset Trim")
 
@@ -1781,7 +1843,7 @@ def setup_viewer(
     def _(_) -> None:
         with edit_lock:
             val = int(trim_end_input.value)
-            edit_state.trim_end = val if val < motion_holder[0].num_frames else None
+            edit_state.trim_end = val if val < edit_state.trim_frame_count else None
         print(f"[edit] Trim end -> {edit_state.trim_end}")
 
     @trim_reset_button.on_click
@@ -1790,7 +1852,7 @@ def setup_viewer(
             edit_state.trim_start = 0
             edit_state.trim_end = None
         trim_start_input.value = 0
-        trim_end_input.value = motion_holder[0].num_frames
+        trim_end_input.value = edit_state.trim_frame_count
         print("[edit] Trim reset")
 
     @speed_factor_input.on_update
@@ -2037,7 +2099,7 @@ def main() -> None:
     state_lock = threading.Lock()
 
     # Create edit state
-    edit_state = EditState()
+    edit_state = EditState(trim_frame_count=clip.num_frames)
     edit_lock = threading.Lock()
 
     # Foot contact view state
@@ -2168,6 +2230,8 @@ def main() -> None:
                         transform=layout_transform,
                     )
                     clip_holder[0] = clip
+                    with edit_lock:
+                        edit_state.trim_frame_count = clip.num_frames
 
                     frame = 0
                     with state_lock:
@@ -2180,10 +2244,10 @@ def main() -> None:
                     viewer.set_slider_value(0)
 
                     # Update edit UI
-                    edit_ui.trim_start_input.max = new_motion_file.num_frames - 1
+                    edit_ui.trim_start_input.max = clip.num_frames - 1
                     edit_ui.trim_start_input.value = 0
-                    edit_ui.trim_end_input.max = new_motion_file.num_frames
-                    edit_ui.trim_end_input.value = new_motion_file.num_frames
+                    edit_ui.trim_end_input.max = clip.num_frames
+                    edit_ui.trim_end_input.value = clip.num_frames
                     edit_ui.speed_factor_input.value = 1.0
                     edit_ui.mirror_checkbox.value = False
                     edit_ui.fix_ground_checkbox.value = False
