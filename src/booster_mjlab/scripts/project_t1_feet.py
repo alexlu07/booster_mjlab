@@ -11,6 +11,8 @@ import numpy as np
 from booster_mjlab.motion import MotionFile
 from booster_mjlab.scripts.visualize_motions import (
     FootGeometry,
+    STANCE_MAX_CLEARANCE,
+    STANCE_SPEED_THRESHOLD,
     create_play_env,
     save_motion_file,
 )
@@ -37,6 +39,27 @@ def _set_qpos(
     data.qpos[7:] = dof_pos
 
 
+def _stance_mask(
+    motion: MotionFile, model: mujoco.MjModel, geometry: FootGeometry
+) -> np.ndarray:
+    """Classify each foot as planted from its clearance and planar speed."""
+    data = mujoco.MjData(model)
+    positions = np.empty((motion.num_frames, 2, 3))
+    clearances = np.empty((motion.num_frames, 2))
+    for frame, q in enumerate(motion.dof_pos):
+        _set_qpos(data, motion, frame, q)
+        mujoco.mj_forward(model, data)
+        positions[frame] = data.xpos[geometry.body_ids]
+        clearances[frame] = geometry.clearances(data)
+    speeds = np.zeros_like(clearances)
+    if motion.num_frames > 1:
+        speeds[1:] = (
+            np.linalg.norm(np.diff(positions[:, :, :2], axis=0), axis=2) / motion.dt
+        )
+        speeds[0] = speeds[1]
+    return (speeds <= STANCE_SPEED_THRESHOLD) & (clearances <= STANCE_MAX_CLEARANCE)
+
+
 def project_motion(motion: MotionFile, model: mujoco.MjModel) -> MotionFile:
     """Return a copy with overlapping T1 soles separated in joint space."""
     if motion.dof_pos.shape[1] != 23 or model.nq != 30:
@@ -49,7 +72,9 @@ def project_motion(motion: MotionFile, model: mujoco.MjModel) -> MotionFile:
     data = mujoco.MjData(model)
     fromto = np.empty(6)
     output = motion.dof_pos.astype(np.float64, copy=True)
+    stance = _stance_mask(motion, model, geometry)
     changed = 0
+    unresolved_double_stance = 0
 
     def distance(frame: int, q: np.ndarray) -> float:
         _set_qpos(data, motion, frame, q)
@@ -59,27 +84,44 @@ def project_motion(motion: MotionFile, model: mujoco.MjModel) -> MotionFile:
         )
 
     for frame, q in enumerate(output):
+        if stance[frame].all():
+            # Both soles are planted: moving either leg makes it slide. Keep
+            # the physically meaningful pose and report it for clip curation.
+            if distance(frame, q) < DISTANCE_MARGIN:
+                unresolved_double_stance += 1
+            continue
+        allowed = (
+            T1_LEG_COLUMNS[6:]
+            if stance[frame, 0]
+            else T1_LEG_COLUMNS[:6]
+            if stance[frame, 1]
+            else T1_LEG_COLUMNS
+        )
+        preference = JOINT_PREFERENCE[np.isin(T1_LEG_COLUMNS, allowed)]
         for _ in range(MAX_ITERATIONS):
             current = distance(frame, q)
             if current >= DISTANCE_MARGIN:
                 break
-            gradient = np.empty(len(T1_LEG_COLUMNS))
-            for index, column in enumerate(T1_LEG_COLUMNS):
+            gradient = np.empty(len(allowed))
+            for index, column in enumerate(allowed):
                 q[column] += FINITE_DIFFERENCE
                 plus = distance(frame, q)
                 q[column] -= 2 * FINITE_DIFFERENCE
                 minus = distance(frame, q)
                 q[column] += FINITE_DIFFERENCE
                 gradient[index] = (plus - minus) / (2 * FINITE_DIFFERENCE)
-            weighted = gradient * JOINT_PREFERENCE
+            weighted = gradient * preference
             denominator = float(np.dot(gradient, weighted))
             if denominator < 1e-10:
                 break
             step = (DISTANCE_MARGIN - current) * weighted / denominator
-            q[T1_LEG_COLUMNS] += np.clip(step, -MAX_JOINT_STEP, MAX_JOINT_STEP)
+            q[allowed] += np.clip(step, -MAX_JOINT_STEP, MAX_JOINT_STEP)
             changed += 1
 
-    print(f"[project] adjusted {changed} collision iterations")
+    print(
+        f"[project] adjusted {changed} collision iterations; "
+        f"left {unresolved_double_stance} double-stance frames unchanged"
+    )
     return MotionFile(
         fps=motion.fps,
         root_pos=motion.root_pos,
