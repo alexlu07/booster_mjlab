@@ -23,6 +23,9 @@ def booster_t1_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     """Create the full-23-DoF serial T1 velocity tracking task."""
     cfg = make_velocity_env_cfg()
     cfg.scene.entities = {"robot": get_t1_robot_cfg()}
+    cfg.observations["actor"]["base_ang_vel"].params["sensor_name"] = (
+        "robot/angular-velocity"
+    )
 
     feet_ground_cfg = ContactSensorCfg(
         name="feet_ground_contact",
