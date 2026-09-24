@@ -82,16 +82,16 @@ def _motor(names: tuple[str, ...], *, armature: float, effort_limit: float, velo
     )
 
 
-# Limits and armatures come from T1_23dof.xml. PD/speed values are conservative
-# simulation defaults and must be identified before real-robot deployment.
+# Effort limits, armatures, and PD gains match Real2Sim's T1 constants. The
+# torque-speed limits are separate conservative simulation limits.
 T1_ARTICULATION = EntityArticulationInfoCfg(
     actuators=(
-        _motor((r"aahead_.*",), armature=0.0018, effort_limit=7.0, velocity_limit=8.0, stiffness=4.0, damping=0.25),
-        _motor((r".*_shoulder_.*", r".*_elbow_.*"), armature=0.0282528, effort_limit=38.3, velocity_limit=18.0, stiffness=10.0, damping=1.0),
-        _motor((r"waist_yaw_joint",), armature=0.0478125, effort_limit=68.0, velocity_limit=14.0, stiffness=80.0, damping=4.0),
-        _motor((r".*_hip_pitch_.*",), armature=0.0523908, effort_limit=98.8, velocity_limit=14.0, stiffness=80.0, damping=4.0),
-        _motor((r".*_hip_(roll|yaw)_.*",), armature=0.0478125, effort_limit=68.0, velocity_limit=14.0, stiffness=80.0, damping=4.0),
-        _motor((r".*_knee_pitch_.*",), armature=0.0636012, effort_limit=130.5, velocity_limit=12.0, stiffness=80.0, damping=4.0),
+        _motor((r"aahead_.*",), armature=0.0018, effort_limit=7.0, velocity_limit=8.0, stiffness=20.0, damping=1.0),
+        _motor((r".*_shoulder_.*", r".*_elbow_.*"), armature=0.0282528, effort_limit=38.3, velocity_limit=18.0, stiffness=20.0, damping=0.5),
+        _motor((r"waist_yaw_joint",), armature=0.0478125, effort_limit=68.0, velocity_limit=14.0, stiffness=200.0, damping=5.0),
+        _motor((r".*_hip_pitch_.*",), armature=0.0523908, effort_limit=98.8, velocity_limit=14.0, stiffness=200.0, damping=5.0),
+        _motor((r".*_hip_(roll|yaw)_.*",), armature=0.0478125, effort_limit=68.0, velocity_limit=14.0, stiffness=200.0, damping=5.0),
+        _motor((r".*_knee_pitch_.*",), armature=0.0636012, effort_limit=130.5, velocity_limit=12.0, stiffness=200.0, damping=5.0),
         _motor((r".*_ankle_pitch_.*",), armature=0.0679104, effort_limit=73.1, velocity_limit=14.0, stiffness=50.0, damping=2.0),
         _motor((r".*_ankle_roll_.*",), armature=0.02037312, effort_limit=17.2, velocity_limit=14.0, stiffness=50.0, damping=2.0),
     ), soft_joint_pos_limit_factor=0.9,
