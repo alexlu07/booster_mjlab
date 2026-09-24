@@ -27,8 +27,14 @@ T1_JOINT_ORDER: tuple[str, ...] = (
 
 
 def get_spec() -> mujoco.MjSpec:
-    """Load the official T1 model and label its primitive collision geoms."""
+    """Load the official T1 model and replace its actuators with mjlab's."""
     spec = mujoco.MjSpec.from_file(str(T1_XML))
+    # The official asset defines position actuators named after its joints.
+    # mjlab installs the actuators from ``T1_ARTICULATION`` below, so keeping
+    # both sets causes duplicate actuator names during scene construction.
+    for actuator in list(spec.actuators):
+        spec.delete(actuator)
+
     collision_index = 0
     for geom in spec.geoms:
         if not geom.contype and not geom.conaffinity:

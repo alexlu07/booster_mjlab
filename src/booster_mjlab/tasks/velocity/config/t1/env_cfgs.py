@@ -27,7 +27,9 @@ def booster_t1_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     feet_ground_cfg = ContactSensorCfg(
         name="feet_ground_contact",
         primary=ContactMatch(
-            mode="subtree", pattern=r"^(left|right)_foot_link$", entity="robot"
+            mode="subtree",
+            pattern=r"^(left|right)_ankle_roll_link$",
+            entity="robot",
         ),
         secondary=ContactMatch(mode="body", pattern="terrain"),
         fields=("found", "force"), reduce="netforce", num_slots=1,
@@ -37,7 +39,7 @@ def booster_t1_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         name="non_foot_ground_contact",
         primary=ContactMatch(
             mode="body", entity="robot", pattern=r".*",
-            exclude=("left_foot_link", "right_foot_link"),
+            exclude=("left_ankle_roll_link", "right_ankle_roll_link"),
         ),
         secondary=ContactMatch(mode="body", pattern="terrain"),
         fields=("found", "force"), reduce="netforce", num_slots=1,

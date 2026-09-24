@@ -636,7 +636,12 @@ def apply_root_offset(
 # -----------------------------------------------------------------------------
 
 
-FOOT_BODY_NAMES = ("left_foot_link", "right_foot_link")
+# K1 has dedicated foot bodies; the serial T1 terminates at the ankle-roll
+# bodies, which carry the foot collision geometry.
+FOOT_BODY_NAME_SETS = (
+    ("left_foot_link", "right_foot_link"),
+    ("left_ankle_roll_link", "right_ankle_roll_link"),
+)
 FOOT_LABELS = ("Left", "Right")
 
 # A foot within this distance of the reference ground counts as in contact.
@@ -725,11 +730,22 @@ class FootGeometry:
         geom_ids: list[list[int]] = []
         local_points: list[list[np.ndarray]] = []
 
-        for name in FOOT_BODY_NAMES:
+        foot_body_names = next(
+            (
+                names
+                for names in FOOT_BODY_NAME_SETS
+                if all(resolve_body_id(mj_model, name) is not None for name in names)
+            ),
+            None,
+        )
+        if foot_body_names is None:
+            candidates = " or ".join("/".join(names) for names in FOOT_BODY_NAME_SETS)
+            print(f"Warning: could not find foot bodies ({candidates})")
+            return None
+
+        for name in foot_body_names:
             body_id = resolve_body_id(mj_model, name)
-            if body_id is None:
-                print(f"Warning: could not find body '{name}'")
-                return None
+            assert body_id is not None
             ids = [
                 geom_id
                 for geom_id in range(mj_model.ngeom)
