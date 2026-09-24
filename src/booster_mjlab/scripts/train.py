@@ -58,6 +58,18 @@ def _patch_dump_yaml() -> None:
     train_mod.dump_yaml = safe_dump_yaml
 
 
+def _sync_amp_dataset_root(args: TrainConfig) -> None:
+    """Pass the CLI AMP dataset override into the registered environment."""
+    dataset_root = getattr(args.agent, "dataset_root", None)
+    reset_event = (
+        args.env.events.get("reset_robot_from_motion")
+        if args.env.events is not None
+        else None
+    )
+    if dataset_root and reset_event is not None:
+        reset_event.params["dataset_root"] = dataset_root
+
+
 def main():
     # Import tasks to populate the registry.
     import mjlab.tasks  # noqa: F401
@@ -79,6 +91,7 @@ def main():
     )
     del remaining_args
 
+    _sync_amp_dataset_root(args)
     _patch_dump_yaml()
     launch_training(task_id=chosen_task, args=args)
 
