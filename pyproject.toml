@@ -21,6 +21,7 @@ play = "booster_mjlab.scripts.play:main"
 visualize-motions = "booster_mjlab.scripts.visualize_motions:main"
 upload-motion = "booster_mjlab.scripts.upload_motion:main"
 motions-to-hf = "booster_mjlab.scripts.motions_to_hf:main"
+project-t1-feet = "booster_mjlab.scripts.project_t1_feet:main"
 export-web-demo = "booster_mjlab.scripts.export_web_demo:main"
 
 [build-system]
