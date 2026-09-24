@@ -215,5 +215,6 @@
     <framequat name="orientation" objtype="site" noise="0.001" objname="imu" />
     <velocimeter name="imu_lin_vel" site="imu" />
     <gyro name="angular-velocity" site="imu" noise="0.005" />
+    <subtreeangmom name="root_angmom" body="trunk" />
   </sensor>
 </mujoco>
