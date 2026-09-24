@@ -86,7 +86,11 @@ def booster_t1_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         "left_foot_collision", "right_foot_collision",
     )
     cfg.events["trunk_inertia"].params["asset_cfg"].body_names = ("trunk",)
-    cfg.events["limb_inertia"].params["asset_cfg"].body_names = (r"(?!trunk$).*",)
+    # The fixed RealSense link has no inertial element. Pseudo-inertia
+    # randomization on a massless body produces invalid model parameters.
+    cfg.events["limb_inertia"].params["asset_cfg"].body_names = (
+        r"(?!trunk$|head_realsense_rgb_link$).*",
+    )
     cfg.rewards["upright"].params["asset_cfg"].body_names = ("trunk",)
     cfg.rewards["body_ang_vel"].params["asset_cfg"].body_names = ("trunk",)
     for reward_name in ("foot_clearance", "foot_slip"):
