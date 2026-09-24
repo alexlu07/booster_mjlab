@@ -670,6 +670,12 @@ FOOT_LABELS = ("Left", "Right")
 # A foot within this distance of the reference ground counts as in contact.
 CONTACT_TOLERANCE = 0.005
 
+# A foot whose horizontal collision-body speed is below this value is eligible
+# to anchor the root-height correction. Swing feet are much faster, so they
+# must never decide where the ground is.
+STANCE_SPEED_THRESHOLD = 0.10
+STANCE_MAX_CLEARANCE = 0.08
+
 # Contact points are thinned onto a grid this coarse, so a flat sole shows a
 # readable handful of markers instead of thousands of mesh vertices.
 CONTACT_POINT_SPACING = 0.02
@@ -903,7 +909,8 @@ def apply_fix_ground_contacts(
 
     mj_data = mujoco.MjData(mj_model)
     num_frames = motion_file.num_frames
-    corrections = np.zeros(num_frames)
+    clearances = np.empty((num_frames, len(geometry.body_ids)))
+    foot_positions = np.empty((num_frames, len(geometry.body_ids), 3))
 
     for i in range(num_frames):
         # Set qpos from motion data
@@ -916,10 +923,38 @@ def apply_fix_ground_contacts(
 
         mujoco.mj_forward(mj_model, mj_data)
 
-        # Use the highest foot (stance foot) to determine the correction.
-        # Using the global minimum would overcorrect when the swing foot dips
-        # below the stance foot, causing the stance foot to float.
-        corrections[i] = -float(geometry.clearances(mj_data).max())
+        clearances[i] = geometry.clearances(mj_data)
+        foot_positions[i] = mj_data.xpos[geometry.body_ids]
+
+    foot_speeds = np.zeros_like(clearances)
+    if num_frames > 1:
+        foot_speeds[1:] = (
+            np.linalg.norm(np.diff(foot_positions[:, :, :2], axis=0), axis=2)
+            / motion_file.dt
+        )
+        foot_speeds[0] = foot_speeds[1]
+
+    # Only feet that are near the floor *and* stationary can be stance feet.
+    # The previous implementation used the highest foot, which reliably chose
+    # a swing foot and drove the actual stance foot through the terrain.
+    stance = (foot_speeds <= STANCE_SPEED_THRESHOLD) & (
+        clearances <= STANCE_MAX_CLEARANCE
+    )
+    corrections = np.full(num_frames, np.nan)
+    for i in range(num_frames):
+        candidates = clearances[i, stance[i]]
+        if len(candidates):
+            # Preserve non-penetration for every plausible stance foot.
+            corrections[i] = -float(candidates.min())
+
+    anchors = np.flatnonzero(np.isfinite(corrections))
+    if len(anchors) == 0:
+        print("Warning: no stationary feet found; skipping ground correction")
+        return motion_file
+    # During flight, keep the root-height trajectory continuous by interpolating
+    # between neighboring stance phases instead of assigning a swing foot to
+    # the terrain.
+    corrections = np.interp(np.arange(num_frames), anchors, corrections[anchors])
 
     # Optional smoothing
     if smooth_sigma > 0 and num_frames > 1:
@@ -1491,9 +1526,9 @@ def setup_viewer(
         )
         with ground_folder:
             fix_ground_checkbox = server.gui.add_checkbox(
-                "Fix Ground Contacts",
+                "Fit Stance Feet to Ground",
                 initial_value=edit_state.fix_ground,
-                hint="Adjust root Z so feet sit on the ground (z=0)",
+                hint="Use slow, low feet as stance anchors; preserve swing feet",
             )
 
         # Apply/Save controls
