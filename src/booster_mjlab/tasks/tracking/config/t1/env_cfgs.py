@@ -14,13 +14,13 @@ from booster_mjlab.robots.booster_k1.torque_speed import (
     initialize_torque_speed_limits,
 )
 from booster_mjlab.tasks.tracking.tracking_env_cfg import make_tracking_env_cfg
-from booster_mjlab.tasks.velocity.mdp import foot_height
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs.mdp.actions import JointPositionActionCfg
 from mjlab.managers import EventTermCfg, ObservationTermCfg, RewardTermCfg
 from mjlab.sensor import ContactMatch, ContactSensorCfg, ObjRef
 from mjlab.tasks.tracking import mdp
 from mjlab.tasks.tracking.mdp import MotionCommandCfg
+from mjlab.tasks.velocity.mdp import foot_height
 
 T1_TRACKING_BODIES = (
     "trunk", "aahead_yaw_link", "aahead_pitch_link", "left_shoulder_pitch_link", "left_shoulder_roll_link", "left_elbow_pitch_link", "left_elbow_yaw_link", "right_shoulder_pitch_link", "right_shoulder_roll_link", "right_elbow_pitch_link", "right_elbow_yaw_link", "waist_yaw_link", "left_hip_pitch_link", "left_hip_roll_link", "left_hip_yaw_link", "left_knee_pitch_link", "left_ankle_pitch_link", "left_ankle_roll_link", "right_hip_pitch_link", "right_hip_roll_link", "right_hip_yaw_link", "right_knee_pitch_link", "right_ankle_pitch_link", "right_ankle_roll_link",
