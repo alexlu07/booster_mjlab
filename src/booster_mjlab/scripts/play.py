@@ -38,11 +38,29 @@ def main() -> None:
         print(
             "booster_mjlab play adds:\n"
             "  --record-dir STR  (viser viewer: where recorded mp4s are written, "
-            f"default {DEFAULT_VIDEO_DIR})\n",
+            f"default {DEFAULT_VIDEO_DIR})\n"
+            "  --dataset-root STR  (AMP reference-motion dataset for environment resets)\n",
             file=sys.stderr,
         )
     record_dir = _pop_flag(argv, "--record-dir")
+    dataset_root = _pop_flag(argv, "--dataset-root")
     sys.argv = [sys.argv[0], *argv]
+
+    if dataset_root is not None:
+        original_load_env_cfg = mjlab_play.load_env_cfg
+
+        def load_env_cfg_with_dataset_root(*args, **kwargs):
+            env_cfg = original_load_env_cfg(*args, **kwargs)
+            reset_event = (
+                env_cfg.events.get("reset_robot_from_motion")
+                if env_cfg.events is not None
+                else None
+            )
+            if reset_event is not None:
+                reset_event.params["dataset_root"] = dataset_root
+            return env_cfg
+
+        mjlab_play.load_env_cfg = load_env_cfg_with_dataset_root
 
     # Viser viewer with a record button.
     mjlab_play.ViserPlayViewer = functools.partial(  # type: ignore[assignment]
