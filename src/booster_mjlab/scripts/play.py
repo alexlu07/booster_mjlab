@@ -48,6 +48,7 @@ def main() -> None:
 
     if dataset_root is not None:
         original_load_env_cfg = mjlab_play.load_env_cfg
+        original_load_rl_cfg = mjlab_play.load_rl_cfg
 
         def load_env_cfg_with_dataset_root(*args, **kwargs):
             env_cfg = original_load_env_cfg(*args, **kwargs)
@@ -61,6 +62,14 @@ def main() -> None:
             return env_cfg
 
         mjlab_play.load_env_cfg = load_env_cfg_with_dataset_root
+
+        def load_rl_cfg_with_dataset_root(*args, **kwargs):
+            agent_cfg = original_load_rl_cfg(*args, **kwargs)
+            if hasattr(agent_cfg, "dataset_root"):
+                agent_cfg.dataset_root = dataset_root
+            return agent_cfg
+
+        mjlab_play.load_rl_cfg = load_rl_cfg_with_dataset_root
 
     # Viser viewer with a record button.
     mjlab_play.ViserPlayViewer = functools.partial(  # type: ignore[assignment]
