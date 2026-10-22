@@ -65,9 +65,26 @@ uv run train Mjlab-Velocity-Flat-Amp-DA-Muon-Booster-T1 \
 
 Track a commanded planar ball velocity on flat ground with T1 AMP. The task uses
 the existing size-4 ball, spawns it 0.4–0.6 m ahead of the robot, and resets when
-the ball is more than 3 m away. Commands initially cover 0.2–0.8 m/s forward and
-±0.2 m/s sideways relative to the robot's heading when sampled, then stay fixed
-in world coordinates for 3–6 seconds.
+the ball is more than 3 m away. Each command samples a speed and a heading change
+relative to the previous command direction, then stays fixed in world coordinates
+for 3–6 seconds. Episode resets initialize the direction from the robot's yaw;
+10% of commands are exactly zero and retain the previous direction.
+
+| PPO iteration (24 steps/iteration) | Speed (m/s) | Heading change |
+|---:|---:|---:|
+| 0 | 0–0.2 | ±15° |
+| 5,000 | 0–0.5 | ±45° |
+| 10,000 | 0–0.5 | ±90° |
+| 15,000 | 0–1.0 | ±90° |
+| 20,000 | 0–1.0 | ±180° |
+
+The schedule uses absolute environment steps and continues on resume. Play mode
+uses the final ranges. Ball velocity tracking tolerance is fixed at 0.2 m/s.
+
+In the Viser play viewer, open **Commands → Ball Velocity** and enable the
+joystick to set ball speed and world heading for the selected environment.
+Heading is absolute (0° = world +X, 90° = world +Y). **Stop ball command** sets
+the target speed to zero; disabling the joystick lets automatic sampling resume.
 
 ```bash
 uv run train Mjlab-Dribble-Flat-Amp-Booster-T1 \

@@ -1,5 +1,8 @@
 """T1 flat-ground AMP dribbling configuration."""
 
+import math
+
+from mjlab.managers.curriculum_manager import CurriculumTermCfg
 from mjlab.managers import (
     EventTermCfg,
     ObservationTermCfg,
@@ -81,5 +84,29 @@ def booster_t1_dribble_env_cfg(runner_cfg, play=False):
     cfg.rewards["soft_landing"].params.pop("command_threshold")
     cfg.curriculum.pop("command_vel")
     cfg.curriculum.pop("soft_landing_weight")
+    # Same absolute-step convention as velocity tracking: 24 rollout steps per
+    # default PPO iteration. Restored counters select the right stage on resume.
+    stages = [
+        {
+            "step": iteration * 24,
+            "speed_range": (0.0, speed),
+            "heading_change_range": (-math.radians(angle), math.radians(angle)),
+        }
+        for iteration, speed, angle in (
+            (0, 0.2, 15),
+            (5000, 0.5, 45),
+            (10000, 0.5, 90),
+            (15000, 1.0, 90),
+            (20000, 1.0, 180),
+        )
+    ]
+    if play:
+        command = cfg.commands["ball_velocity"]
+        command.speed_range = stages[-1]["speed_range"]
+        command.heading_change_range = stages[-1]["heading_change_range"]
+    else:
+        cfg.curriculum["ball_command"] = CurriculumTermCfg(
+            func=mdp.ball_command_curriculum, params={"stages": stages}
+        )
     cfg.terminations["ball_too_far"] = TerminationTermCfg(func=mdp.ball_too_far)
     return cfg

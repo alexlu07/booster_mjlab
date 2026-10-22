@@ -1,11 +1,18 @@
 """Simple commands, observations, resets, and rewards for dribbling."""
 
 from dataclasses import dataclass
+import math
 
 import torch
 
 from mjlab.managers.command_manager import CommandTerm, CommandTermCfg
-from mjlab.utils.lab_api.math import quat_apply, quat_apply_inverse, yaw_quat
+from mjlab.utils.lab_api.math import (
+    euler_xyz_from_quat,
+    quat_apply,
+    quat_apply_inverse,
+    wrap_to_pi,
+    yaw_quat,
+)
 from mjlab.utils.lab_api.string import resolve_matching_names_values
 
 
@@ -32,25 +39,86 @@ class BallVelocityCommand(CommandTerm):
     def __init__(self, cfg, env):
         super().__init__(cfg, env)
         self.velocity_w = torch.zeros(self.num_envs, 3, device=self.device)
+        self.heading_w = torch.zeros(self.num_envs, device=self.device)
         self.metrics["velocity_error"] = torch.zeros(self.num_envs, device=self.device)
+        self._joystick_enabled = None
+        self._joystick_speed = None
+        self._joystick_heading = None
+        self._joystick_get_env_idx = None
 
     @property
     def command(self):
         return to_robot_yaw_frame(self._env, self.velocity_w)[:, :2]
 
     def _resample_command(self, env_ids):
-        # Sample around the current forward direction, then hold fixed in world space.
-        velocity = torch.zeros(len(env_ids), 3, device=self.device)
-        velocity[:, 0].uniform_(*self.cfg.forward_range)
-        velocity[:, 1].uniform_(*self.cfg.lateral_range)
+        # Start each episode from the robot's heading. Later turns are relative
+        # to the previous command, independent of the robot's current heading.
         robot = self._env.scene["robot"]
+        initial_ids = env_ids[self.command_counter[env_ids] == 0]
         # Resampling also runs before forward() during a reset.
-        pose = self._env.sim.data.qpos[:, robot.indexing.free_joint_q_adr][env_ids]
-        quat = yaw_quat(pose[:, 3:7])
-        self.velocity_w[env_ids] = quat_apply(quat, velocity)
+        pose = self._env.sim.data.qpos[:, robot.indexing.free_joint_q_adr][initial_ids]
+        self.heading_w[initial_ids] = euler_xyz_from_quat(pose[:, 3:7])[2]
+        speed = torch.empty(len(env_ids), device=self.device).uniform_(
+            *self.cfg.speed_range
+        )
+        turn = torch.empty_like(speed).uniform_(*self.cfg.heading_change_range)
+        stop = (
+            torch.rand(len(env_ids), device=self.device)
+            < self.cfg.zero_speed_probability
+        )
+        speed[stop] = 0.0
+        # Retain direction through stops, where a zero velocity has no angle.
+        turn[stop] = 0.0
+        heading = wrap_to_pi(self.heading_w[env_ids] + turn)
+        self.heading_w[env_ids] = heading
+        self.velocity_w[env_ids, 0] = speed * torch.cos(heading)
+        self.velocity_w[env_ids, 1] = speed * torch.sin(heading)
 
     def _update_command(self, env_ids=None):
-        pass  # The command property performs the current yaw-frame transform.
+        if self._joystick_enabled is None or not self._joystick_enabled.value:
+            return
+        idx = self._joystick_get_env_idx()
+        # Partial resets must not modify the command of another environment.
+        if env_ids is not None and not torch.any(env_ids == idx):
+            return
+        heading = math.radians(self._joystick_heading.value)
+        speed = self._joystick_speed.value
+        self.heading_w[idx] = heading
+        self.velocity_w[idx, 0] = speed * math.cos(heading)
+        self.velocity_w[idx, 1] = speed * math.sin(heading)
+
+    def create_gui(
+        self, name, server, get_env_idx, on_change=None, request_action=None
+    ):
+        """Viewer joystick sliders override the selected environment's ball target."""
+        from viser import Icon
+
+        with server.gui.add_folder(name.replace("_", " ").title()):
+            enabled = server.gui.add_checkbox("Enable joystick", initial_value=False)
+            speed = server.gui.add_slider(
+                "Ball speed (m/s)",
+                min=0.0,
+                max=self.cfg.speed_range[1],
+                step=0.01,
+                initial_value=0.0,
+            )
+            heading = server.gui.add_slider(
+                "World heading (degrees)",
+                min=-180.0,
+                max=180.0,
+                step=1.0,
+                initial_value=0.0,
+            )
+            stop = server.gui.add_button("Stop ball command", icon=Icon.SQUARE_X)
+
+            @stop.on_click
+            def _stop(_event):
+                speed.value = 0.0
+
+        self._joystick_enabled = enabled
+        self._joystick_speed = speed
+        self._joystick_heading = heading
+        self._joystick_get_env_idx = get_env_idx
 
     def _update_metrics(self):
         error = (
@@ -64,8 +132,10 @@ class BallVelocityCommand(CommandTerm):
 
 @dataclass(kw_only=True)
 class BallVelocityCommandCfg(CommandTermCfg):
-    forward_range: tuple[float, float] = (0.2, 0.8)
-    lateral_range: tuple[float, float] = (-0.2, 0.2)
+    speed_range: tuple[float, float] = (0.0, 0.2)
+    heading_change_range: tuple[float, float] = (-math.radians(15), math.radians(15))
+    """Heading change per resample in radians (initially ±15 degrees)."""
+    zero_speed_probability: float = 0.1
 
     def build(self, env):
         return BallVelocityCommand(self, env)
@@ -93,7 +163,21 @@ def reset_ball(env, env_ids, radius):
     )
 
 
-def track_ball_velocity(env, std=0.3):
+def ball_command_curriculum(env, env_ids, stages):
+    """Expand speed and turn ranges at absolute environment-step milestones."""
+    del env_ids
+    cfg = env.command_manager.get_term("ball_velocity").cfg
+    for stage in stages:
+        if env.common_step_counter >= stage["step"]:
+            cfg.speed_range = stage["speed_range"]
+            cfg.heading_change_range = stage["heading_change_range"]
+    return {
+        "speed_max": torch.tensor(cfg.speed_range[1]),
+        "heading_change_max": torch.tensor(cfg.heading_change_range[1]),
+    }
+
+
+def track_ball_velocity(env, std=0.2):
     error = ball_velocity(env) - env.command_manager.get_command("ball_velocity")
     return torch.exp(-error.square().sum(dim=-1) / std**2)
 
