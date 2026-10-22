@@ -75,8 +75,19 @@ uv run train Mjlab-Dribble-Flat-Amp-Booster-T1 \
     --env.scene.num-envs 4096
 ```
 
-Use `Mjlab-Dribble-Flat-Amp-Muon-Booster-T1` for Muon. AMP motion features and
-action regularization match the T1 velocity task. Posture and upright tolerances
+Use `Mjlab-Dribble-Flat-Amp-DA-Muon-Booster-T1` for left/right data augmentation
+with Muon, or omit `DA` for Muon alone. Dribble augmentation mirrors the robot,
+ball state, and lateral ball command. To use the combined local walking/dribble
+dataset prepared in `data/t1_amp_mix`:
+
+```bash
+uv run train Mjlab-Dribble-Flat-Amp-DA-Muon-Booster-T1 \
+    --agent.dataset-root ./data/t1_amp_mix \
+    --env.scene.num-envs 4096
+```
+
+AMP motion features and action regularization match the T1 velocity task.
+Posture and upright tolerances
 are fixed at walking values; foot slip and landing penalties are always active.
 Airtime, clearance, swing-height, and standing-pose rewards are omitted.
 
