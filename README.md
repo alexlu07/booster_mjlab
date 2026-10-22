@@ -61,6 +61,25 @@ uv run train Mjlab-Velocity-Flat-Amp-DA-Muon-Booster-T1 \
 
 `Flat`, `Rough`, Adam/Muon, AMP/non-AMP, and symmetry-augmentation variants use the same task naming as K1 with `Booster-T1` in place of `Booster-K1`.
 
+### T1 dribbling
+
+Track a commanded planar ball velocity on flat ground with T1 AMP. The task uses
+the existing size-4 ball, spawns it 0.4–0.6 m ahead of the robot, and resets when
+the ball is more than 3 m away. Commands initially cover 0.2–0.8 m/s forward and
+±0.2 m/s sideways relative to the robot's heading when sampled, then stay fixed
+in world coordinates for 3–6 seconds.
+
+```bash
+uv run train Mjlab-Dribble-Flat-Amp-Booster-T1 \
+    --agent.dataset-root /path/to/gmr_t1_motions \
+    --env.scene.num-envs 4096
+```
+
+Use `Mjlab-Dribble-Flat-Amp-Muon-Booster-T1` for Muon. AMP motion features and
+action regularization match the T1 velocity task. Posture and upright tolerances
+are fixed at walking values; foot slip and landing penalties are always active.
+Airtime, clearance, swing-height, and standing-pose rewards are omitted.
+
 ### 2. Motion Imitation
 
 Train a Booster K1 to track motion capture clips on flat terrain. Motions are managed as WandB artifacts;
