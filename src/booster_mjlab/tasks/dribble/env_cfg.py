@@ -10,6 +10,7 @@ from mjlab.managers import (
     TerminationTermCfg,
 )
 from mjlab.tasks.velocity import mdp as velocity_mdp
+from mjlab.sensor import ContactMatch, ContactSensorCfg
 
 from booster_mjlab.environment.ball.ball_constants import get_ball_cfg, get_ball_radius
 from booster_mjlab.tasks.velocity.config import with_amp_obs_group
@@ -33,6 +34,21 @@ def booster_t1_dribble_env_cfg(runner_cfg, play=False):
         amp_joint_names=T1_AMP_LEG_JOINTS,
     )
     cfg.scene.entities["ball"] = get_ball_cfg(ball_pos=(0.5, 0.0, None))
+    cfg.scene.sensors += (
+        ContactSensorCfg(
+            name="nonfoot_ball_contact",
+            primary=ContactMatch(
+                mode="body",
+                entity="robot",
+                pattern=r".*",
+                exclude=("left_ankle_roll_link", "right_ankle_roll_link"),
+            ),
+            secondary=ContactMatch(mode="body", entity="ball", pattern="ball"),
+            fields=("found",),
+            reduce="netforce",
+            num_slots=1,
+        ),
+    )
     cfg.sim.mujoco.cone = "elliptic"
     cfg.commands = {
         "ball_velocity": mdp.BallVelocityCommandCfg(resampling_time_range=(3.0, 6.0))
@@ -63,6 +79,11 @@ def booster_t1_dribble_env_cfg(runner_cfg, play=False):
         func=mdp.track_ball_velocity, weight=4.25
     )
     cfg.rewards["ball_proximity"] = RewardTermCfg(func=mdp.ball_proximity, weight=0.5)
+    cfg.rewards["nonfoot_ball_contact"] = RewardTermCfg(
+        func=mdp.nonfoot_ball_contact,
+        weight=-1.0,
+        params={"sensor_name": "nonfoot_ball_contact"},
+    )
 
     upright = cfg.rewards["upright"]
     upright.func = velocity_mdp.upright
