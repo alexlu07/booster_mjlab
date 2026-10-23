@@ -83,7 +83,6 @@ def booster_t1_dribble_env_cfg(runner_cfg, play=False):
     cfg.rewards["soft_landing"].params.pop("command_name")
     cfg.rewards["soft_landing"].params.pop("command_threshold")
     cfg.curriculum.pop("command_vel")
-    cfg.curriculum.pop("soft_landing_weight")
     # Same absolute-step convention as velocity tracking: 24 rollout steps per
     # default PPO iteration. Restored counters select the right stage on resume.
     stages = [
