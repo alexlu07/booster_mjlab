@@ -80,6 +80,5 @@ def booster_t1_dribble_env_cfg(runner_cfg, play=False):
     cfg.rewards["soft_landing"].params.pop("command_name")
     cfg.rewards["soft_landing"].params.pop("command_threshold")
     cfg.curriculum.pop("command_vel")
-    cfg.curriculum.pop("soft_landing_weight")
     cfg.terminations["ball_too_far"] = TerminationTermCfg(func=mdp.ball_too_far)
     return cfg

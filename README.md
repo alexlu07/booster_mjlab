@@ -89,6 +89,8 @@ uv run train Mjlab-Dribble-Flat-Amp-DA-Muon-Booster-T1 \
 AMP motion features and action regularization match the T1 velocity task.
 Posture and upright tolerances
 are fixed at walking values; foot slip and landing penalties are always active.
+The landing penalty retains the velocity task's weight curriculum: −0.0001
+initially, −0.001 at 1,000 PPO iterations, and −0.005 at 7,000 (24 steps/iteration).
 Airtime, clearance, swing-height, and standing-pose rewards are omitted.
 
 ### 2. Motion Imitation
