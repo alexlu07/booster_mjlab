@@ -3,6 +3,7 @@
 Adds:
 - FastSAC runner config support (RslRlFastSacRunnerCfg union)
 - Unpicklable object cleanup before config YAML serialization
+- Upload completed training videos to the active W&B run
 """
 
 import sys
@@ -14,6 +15,7 @@ import tyro
 from mjlab import TYRO_FLAGS
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.scripts.train import launch_training
+from mjlab.scripts.train import run_train as _mjlab_run_train
 from mjlab.tasks.registry import list_tasks, load_env_cfg, load_rl_cfg
 
 from booster_mjlab.rl import RslRlFastSacRunnerCfg, RslRlOnPolicyRunnerCfg
@@ -70,6 +72,18 @@ def _sync_amp_dataset_root(args: TrainConfig) -> None:
         reset_event.params["dataset_root"] = dataset_root
 
 
+def _run_train(task_id, args, log_dir):
+    """Install integrations inside each worker, including torchrunx workers."""
+    import mjlab.scripts.train as train_mod
+
+    _patch_dump_yaml()
+    if args.video:
+        from booster_mjlab.scripts.video_recorder import WandbVideoRecorder
+
+        train_mod.VideoRecorder = WandbVideoRecorder
+    _mjlab_run_train(task_id, args, log_dir)
+
+
 def main():
     # Import tasks to populate the registry.
     import mjlab.tasks  # noqa: F401
@@ -92,7 +106,9 @@ def main():
     del remaining_args
 
     _sync_amp_dataset_root(args)
-    _patch_dump_yaml()
+    import mjlab.scripts.train as train_mod
+
+    train_mod.run_train = _run_train
     launch_training(task_id=chosen_task, args=args)
 
 
