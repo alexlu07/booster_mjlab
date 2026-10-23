@@ -177,9 +177,12 @@ def ball_command_curriculum(env, env_ids, stages):
     }
 
 
-def track_ball_velocity(env, std=0.2):
-    error = ball_velocity(env) - env.command_manager.get_command("ball_velocity")
-    return torch.exp(-error.square().sum(dim=-1) / std**2)
+def track_ball_velocity(env, std=0.2, std_at_rest=0.05, relative_std=0.5):
+    """Track ball velocity with tighter tolerance for slow and stop commands."""
+    command = env.command_manager.get_command("ball_velocity")
+    tolerance = (relative_std * command.norm(dim=-1)).clamp(min=std_at_rest, max=std)
+    error = ball_velocity(env) - command
+    return torch.exp(-error.square().sum(dim=-1) / tolerance.square())
 
 
 def ball_proximity(env, distance=0.4, std=0.5):

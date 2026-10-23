@@ -76,7 +76,9 @@ def booster_t1_dribble_env_cfg(runner_cfg, play=False):
     ):
         cfg.rewards.pop(name)
     cfg.rewards["track_ball_velocity"] = RewardTermCfg(
-        func=mdp.track_ball_velocity, weight=4.25
+        func=mdp.track_ball_velocity,
+        weight=4.25,
+        params={"std": 0.2, "std_at_rest": 0.05, "relative_std": 0.5},
     )
     cfg.rewards["ball_proximity"] = RewardTermCfg(func=mdp.ball_proximity, weight=0.5)
     cfg.rewards["nonfoot_ball_contact"] = RewardTermCfg(
