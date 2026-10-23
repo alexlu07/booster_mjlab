@@ -92,6 +92,9 @@ are fixed at walking values; foot slip and landing penalties are always active.
 The landing penalty retains the velocity task's weight curriculum: −0.0001
 initially, −0.001 at 1,000 PPO iterations, and −0.005 at 7,000 (24 steps/iteration).
 Airtime, clearance, swing-height, and standing-pose rewards are omitted.
+Ball contact with non-foot robot bodies (including shins) incurs a −1.0 reward
+rate while contact persists, regardless of contact count or force. Contacts with
+the two foot bodies are allowed. The penalty does not terminate the episode.
 
 ### 2. Motion Imitation
 

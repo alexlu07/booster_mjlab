@@ -110,6 +110,11 @@ def ball_too_far(env, max_distance=3.0):
     return delta[:, :2].norm(dim=-1) > max_distance
 
 
+def nonfoot_ball_contact(env, sensor_name):
+    """Unit cost each timestep with any non-foot robot–ball contact."""
+    return (env.scene[sensor_name].data.found > 0).any(dim=-1).float()
+
+
 def feet_slip(env, sensor_name, asset_cfg):
     """Always-active foot slip cost, using terrain contacts only."""
     contact = env.scene[sensor_name].data.found > 0
