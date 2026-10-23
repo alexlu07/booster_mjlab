@@ -96,6 +96,19 @@ Ball contact with non-foot robot bodies (including shins) incurs a −1.0 reward
 rate while contact persists, regardless of contact count or force. Contacts with
 the two foot bodies are allowed. The penalty does not terminate the episode.
 
+### Training videos
+
+Add `--video --video-length 500 --video-interval 12000` to a training command
+to record 500-frame clips every 12,000 environment steps. For T1 dribble this
+is 10 seconds of simulation every 500 PPO iterations with the default rollout
+length. Only the first environment on rank 0 is recorded.
+
+Completed clips are saved under the run's `videos/train/` directory and logged
+to **Videos/train** in the active W&B run. After syncing, open that video panel
+on the run page from your computer or phone. Without an active W&B run, clips
+are saved locally. Video encoding requires ffmpeg; headless rendering requires
+an appropriate graphics backend, typically `MUJOCO_GL=egl` on NVIDIA machines.
+
 ### 2. Motion Imitation
 
 Train a Booster K1 to track motion capture clips on flat terrain. Motions are managed as WandB artifacts;
