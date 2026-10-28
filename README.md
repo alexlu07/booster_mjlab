@@ -98,7 +98,7 @@ the two foot bodies are allowed. The penalty does not terminate the episode.
 
 ### Training videos
 
-Add `--video --video-length 500 --video-interval 12000` to a training command
+Add `--video True --video-length 500 --video-interval 12000` to a training command
 to record 500-frame clips every 12,000 environment steps. For T1 dribble this
 is 10 seconds of simulation every 500 PPO iterations with the default rollout
 length. Only the first environment on rank 0 is recorded.
