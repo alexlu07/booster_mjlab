@@ -48,7 +48,10 @@ def booster_t1_dribble_env_cfg(runner_cfg, play=False):
     )
     cfg.sim.mujoco.cone = "elliptic"
     cfg.commands = {
-        "ball_velocity": mdp.BallVelocityCommandCfg(resampling_time_range=(3.0, 6.0))
+        "ball_velocity": mdp.BallVelocityCommandCfg(
+            speed_range=(0.0, 0.8),
+            resampling_time_range=(3.0, 6.0),
+        )
     }
     for group in ("actor", "critic"):
         terms = cfg.observations[group].terms

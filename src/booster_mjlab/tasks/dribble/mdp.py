@@ -1,11 +1,18 @@
 """Simple commands, observations, resets, and rewards for dribbling."""
 
 from dataclasses import dataclass
+import math
 
 import torch
 
 from mjlab.managers.command_manager import CommandTerm, CommandTermCfg
-from mjlab.utils.lab_api.math import quat_apply, quat_apply_inverse, yaw_quat
+from mjlab.utils.lab_api.math import (
+    euler_xyz_from_quat,
+    quat_apply,
+    quat_apply_inverse,
+    wrap_to_pi,
+    yaw_quat,
+)
 from mjlab.utils.lab_api.string import resolve_matching_names_values
 
 
@@ -32,6 +39,7 @@ class BallVelocityCommand(CommandTerm):
     def __init__(self, cfg, env):
         super().__init__(cfg, env)
         self.velocity_w = torch.zeros(self.num_envs, 3, device=self.device)
+        self.heading_w = torch.zeros(self.num_envs, device=self.device)
         self.metrics["velocity_error"] = torch.zeros(self.num_envs, device=self.device)
 
     @property
@@ -39,15 +47,28 @@ class BallVelocityCommand(CommandTerm):
         return to_robot_yaw_frame(self._env, self.velocity_w)[:, :2]
 
     def _resample_command(self, env_ids):
-        # Sample around the current forward direction, then hold fixed in world space.
-        velocity = torch.zeros(len(env_ids), 3, device=self.device)
-        velocity[:, 0].uniform_(*self.cfg.forward_range)
-        velocity[:, 1].uniform_(*self.cfg.lateral_range)
+        # Start each episode from the robot's heading. Later turns are relative
+        # to the previous command, independent of the robot's current heading.
         robot = self._env.scene["robot"]
+        initial_ids = env_ids[self.command_counter[env_ids] == 0]
         # Resampling also runs before forward() during a reset.
-        pose = self._env.sim.data.qpos[:, robot.indexing.free_joint_q_adr][env_ids]
-        quat = yaw_quat(pose[:, 3:7])
-        self.velocity_w[env_ids] = quat_apply(quat, velocity)
+        pose = self._env.sim.data.qpos[:, robot.indexing.free_joint_q_adr][initial_ids]
+        self.heading_w[initial_ids] = euler_xyz_from_quat(pose[:, 3:7])[2]
+        speed = torch.empty(len(env_ids), device=self.device).uniform_(
+            *self.cfg.speed_range
+        )
+        turn = torch.empty_like(speed).uniform_(*self.cfg.heading_change_range)
+        stop = (
+            torch.rand(len(env_ids), device=self.device)
+            < self.cfg.zero_speed_probability
+        )
+        speed[stop] = 0.0
+        # Retain direction through stops, where a zero velocity has no angle.
+        turn[stop] = 0.0
+        heading = wrap_to_pi(self.heading_w[env_ids] + turn)
+        self.heading_w[env_ids] = heading
+        self.velocity_w[env_ids, 0] = speed * torch.cos(heading)
+        self.velocity_w[env_ids, 1] = speed * torch.sin(heading)
 
     def _update_command(self, env_ids=None):
         pass  # The command property performs the current yaw-frame transform.
@@ -64,8 +85,10 @@ class BallVelocityCommand(CommandTerm):
 
 @dataclass(kw_only=True)
 class BallVelocityCommandCfg(CommandTermCfg):
-    forward_range: tuple[float, float] = (0.2, 0.8)
-    lateral_range: tuple[float, float] = (-0.2, 0.2)
+    speed_range: tuple[float, float] = (0.0, 0.8)
+    heading_change_range: tuple[float, float] = (-math.radians(45), math.radians(45))
+    """Heading change per resample in radians."""
+    zero_speed_probability: float = 0.1
 
     def build(self, env):
         return BallVelocityCommand(self, env)

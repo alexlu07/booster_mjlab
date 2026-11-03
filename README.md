@@ -65,9 +65,12 @@ uv run train Mjlab-Velocity-Flat-Amp-DA-Muon-Booster-T1 \
 
 Track a commanded planar ball velocity on flat ground with T1 AMP. The task uses
 the existing size-4 ball, spawns it 0.4–0.6 m ahead of the robot, and resets when
-the ball is more than 3 m away. Commands initially cover 0.2–0.8 m/s forward and
-±0.2 m/s sideways relative to the robot's heading when sampled, then stay fixed
-in world coordinates for 3–6 seconds.
+the ball is more than 3 m away. Commands sample a speed of 0–0.8 m/s and a heading
+change of ±45°, then stay fixed in world coordinates for 3–6 seconds. Episode
+resets initialize the heading from the robot's yaw; later turns are relative to
+the previous command heading. Ten percent of commands are exactly zero and
+retain the previous heading. These ranges are fixed throughout training and play;
+ball velocity tracking retains its fixed 0.3 m/s tolerance.
 
 ```bash
 uv run train Mjlab-Dribble-Flat-Amp-Booster-T1 \
