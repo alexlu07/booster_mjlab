@@ -116,6 +116,20 @@ def reset_ball(env, env_ids, radius):
     )
 
 
+def ball_command_curriculum(env, env_ids, stages):
+    """Expand speed and turn ranges at absolute environment-step milestones."""
+    del env_ids
+    cfg = env.command_manager.get_term("ball_velocity").cfg
+    for stage in stages:
+        if env.common_step_counter >= stage["step"]:
+            cfg.speed_range = stage["speed_range"]
+            cfg.heading_change_range = stage["heading_change_range"]
+    return {
+        "speed_max": torch.tensor(cfg.speed_range[1]),
+        "heading_change_max": torch.tensor(cfg.heading_change_range[1]),
+    }
+
+
 def track_ball_velocity(env, std=0.3):
     error = ball_velocity(env) - env.command_manager.get_command("ball_velocity")
     return torch.exp(-error.square().sum(dim=-1) / std**2)

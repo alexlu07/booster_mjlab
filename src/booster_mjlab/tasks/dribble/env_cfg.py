@@ -1,11 +1,14 @@
 """T1 flat-ground AMP dribbling configuration."""
 
+import math
+
 from mjlab.managers import (
     EventTermCfg,
     ObservationTermCfg,
     RewardTermCfg,
     TerminationTermCfg,
 )
+from mjlab.managers.curriculum_manager import CurriculumTermCfg
 from mjlab.tasks.velocity import mdp as velocity_mdp
 from mjlab.sensor import ContactMatch, ContactSensorCfg
 
@@ -47,9 +50,25 @@ def booster_t1_dribble_env_cfg(runner_cfg, play=False):
         ),
     )
     cfg.sim.mujoco.cone = "elliptic"
+    # Absolute environment steps keep the schedule aligned when resuming.
+    stages = [
+        {
+            "step": iteration * runner_cfg.num_steps_per_env,
+            "speed_range": (min_speed, max_speed),
+            "heading_change_range": (-math.radians(angle), math.radians(angle)),
+        }
+        for iteration, min_speed, max_speed, angle in (
+            (0, 0.2, 0.8, 45),
+            (10000, 0.2, 1.2, 90),
+            (20000, 0.0, 1.2, 180),
+        )
+    ]
+    command_stage = stages[-1] if play else stages[0]
     cfg.commands = {
         "ball_velocity": mdp.BallVelocityCommandCfg(
-            speed_range=(0.0, 0.8),
+            speed_range=command_stage["speed_range"],
+            heading_change_range=command_stage["heading_change_range"],
+            zero_speed_probability=0.0,
             resampling_time_range=(3.0, 6.0),
         )
     }
@@ -81,7 +100,7 @@ def booster_t1_dribble_env_cfg(runner_cfg, play=False):
     cfg.rewards["ball_proximity"] = RewardTermCfg(func=mdp.ball_proximity, weight=0.5)
     cfg.rewards["nonfoot_ball_contact"] = RewardTermCfg(
         func=mdp.nonfoot_ball_contact,
-        weight=-1.0,
+        weight=-5.0,
         params={"sensor_name": "nonfoot_ball_contact"},
     )
 
@@ -104,5 +123,9 @@ def booster_t1_dribble_env_cfg(runner_cfg, play=False):
     cfg.rewards["soft_landing"].params.pop("command_name")
     cfg.rewards["soft_landing"].params.pop("command_threshold")
     cfg.curriculum.pop("command_vel")
+    if not play:
+        cfg.curriculum["ball_command"] = CurriculumTermCfg(
+            func=mdp.ball_command_curriculum, params={"stages": stages}
+        )
     cfg.terminations["ball_too_far"] = TerminationTermCfg(func=mdp.ball_too_far)
     return cfg
