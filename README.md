@@ -68,18 +68,15 @@ the existing size-4 ball, spawns it 0.4–0.6 m ahead of the robot, and resets w
 the ball is more than 3 m away. Commands sample a speed and a heading change,
 then stay fixed in world coordinates for 3–6 seconds. Episode
 resets initialize the heading from the robot's yaw; later turns are relative to
-the previous command heading. Training expands the command ranges as follows:
-
-| PPO iterations | Speed (m/s) | Heading change |
-|---|---|---|
-| 0–10,000 | 0.2–0.8 | ±45° |
-| 10,000–20,000 | 0.2–1.2 | ±90° |
-| 20,000 onward | 0.0–1.2 | ±180° |
-
-Transitions occur at iterations 10,000 and 20,000, using absolute environment
-steps and the configured rollout length so the schedule continues on resume.
-Play uses the final ranges. Explicit stop commands are disabled throughout the schedule;
+the previous command heading. Training and play use fixed speed ranges of
+0.2–0.8 m/s and heading changes of ±45°. Explicit stop commands are disabled;
 ball velocity tracking retains its fixed 0.3 m/s tolerance.
+
+Ball physics are resampled on every episode reset: mass and inertia scale
+together by 0.75–1.25×, sliding friction spans 0.25–0.8, torsional friction
+0.0005–0.006 m, and rolling resistance 0.03–0.09 (converted to MuJoCo's rolling
+friction coefficient for the ball radius). Ball size and center of mass stay
+fixed. Actor and critic still receive exact simulator ball position and velocity.
 
 ```bash
 uv run train Mjlab-Dribble-Flat-Amp-Booster-T1 \
@@ -98,7 +95,9 @@ uv run train Mjlab-Dribble-Flat-Amp-DA-Muon-Booster-T1 \
     --env.scene.num-envs 4096
 ```
 
-AMP motion features and action regularization match the T1 velocity task.
+AMP motion features match the T1 velocity task. Action-rate and upper-body
+posture penalty weights are both −0.2, twice the velocity task's −0.1, to
+discourage abrupt actions and excessive arm motion.
 Posture and upright tolerances
 are fixed at walking values; foot slip and landing penalties are always active.
 The landing penalty retains the velocity task's weight curriculum: −0.0001
