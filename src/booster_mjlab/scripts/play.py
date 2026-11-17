@@ -12,6 +12,7 @@ import sys
 import mjlab.scripts.play as mjlab_play
 
 from booster_mjlab.viewer import DEFAULT_VIDEO_DIR, RecordingViserPlayViewer
+from booster_mjlab.viewer.play_diagnostics import diagnostics_runner_class
 
 
 def _pop_flag(argv: list[str], flag: str) -> str | None:
@@ -45,6 +46,14 @@ def main() -> None:
     record_dir = _pop_flag(argv, "--record-dir")
     dataset_root = _pop_flag(argv, "--dataset-root")
     sys.argv = [sys.argv[0], *argv]
+
+    original_load_runner_cls = mjlab_play.load_runner_cls
+
+    def load_runner_with_diagnostics(task_id):
+        runner_cls = original_load_runner_cls(task_id) or mjlab_play.MjlabOnPolicyRunner
+        return diagnostics_runner_class(runner_cls)
+
+    mjlab_play.load_runner_cls = load_runner_with_diagnostics
 
     if dataset_root is not None:
         original_load_env_cfg = mjlab_play.load_env_cfg

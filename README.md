@@ -99,10 +99,23 @@ T1 and K1 already include actuator target delay: 2–8 simulation steps with a
 separately from ball observation latency.
 
 In Viser, **Commands → Ball velocity** provides a **Manual control** toggle,
-ball-speed and robot-relative direction sliders (0° forward, +90° left), and a
+ball-speed and world-frame direction sliders (0° along world +X, +90° along +Y), and a
 **Stop ball command** button. Controls affect the selected environment; manual
 commands persist through episode resets. Disabling manual control resumes
 automatic commands at the next scheduled resample (within 3–6 seconds).
+
+**Rewards → Select terms** also includes checkpoint model diagnostics: PPO's
+`Critic V(s)` (or individual `Critic Q(s, a)` estimates for FastSAC),
+`Discriminator score`, `Style reward (raw)`, and
+`Style reward (weighted per step)`. They use the same selectable plots as reward
+terms. Critic and discriminator weights are loaded from the checkpoint, and
+AMP history is cleared at episode resets without adding samples to replay.
+Model diagnostics describe the observation before each action. The raw style
+reward includes the discriminator's reward scale; its weighted contribution
+also includes the current play configuration's AMP weight and timestep scaling.
+The discriminator's minibatch-standard-deviation feature is zero with one
+environment, so scores can differ from a training batch. The reward bars show
+roughly one-second running averages; reward plots show individual viewer samples.
 
 ```bash
 uv run train Mjlab-Dribble-Flat-Amp-Booster-T1 \

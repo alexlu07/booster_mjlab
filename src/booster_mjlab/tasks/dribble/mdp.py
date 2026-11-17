@@ -82,20 +82,16 @@ class BallVelocityCommand(CommandTerm):
         idx = self._gui_get_env_idx()
         if env_ids is not None and not (env_ids == idx).any():
             return
-        # qpos also contains the new robot orientation before reset's forward().
-        robot = self._env.scene["robot"]
-        pose = self._env.sim.data.qpos[:, robot.indexing.free_joint_q_adr][idx : idx + 1]
-        yaw = euler_xyz_from_quat(pose[:, 3:7])[2][0]
-        heading = wrap_to_pi(yaw + math.radians(direction.value))
+        heading = math.radians(direction.value)
         self.heading_w[idx] = heading
-        self.velocity_w[idx, 0] = speed.value * torch.cos(heading)
-        self.velocity_w[idx, 1] = speed.value * torch.sin(heading)
+        self.velocity_w[idx, 0] = speed.value * math.cos(heading)
+        self.velocity_w[idx, 1] = speed.value * math.sin(heading)
         self.velocity_w[idx, 2] = 0.0
 
     def create_gui(
         self, name, server, get_env_idx, on_change=None, request_action=None
     ):
-        """Control the selected environment's ball velocity in the robot frame.
+        """Control the selected environment's ball velocity in the world frame.
 
         Callbacks change GUI state only; tensor writes happen during command
         updates on the simulation thread. Automatic sampling continues for all
@@ -110,7 +106,7 @@ class BallVelocityCommand(CommandTerm):
                 initial_value=max(0.0, min(max_speed, sum(self.cfg.speed_range) / 2)),
             )
             direction = server.gui.add_slider(
-                "Direction (robot frame, deg)", min=-180.0, max=180.0,
+                "Direction (world frame, deg)", min=-180.0, max=180.0,
                 step=1.0, initial_value=0.0,
             )
             stop = server.gui.add_button("Stop ball command")

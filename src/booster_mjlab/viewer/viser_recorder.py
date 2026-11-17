@@ -132,7 +132,10 @@ class RecordingViserPlayViewer(ViserPlayViewer):
 
     @override
     def setup(self) -> None:
-        super().setup()
+        from booster_mjlab.viewer.play_diagnostics import diagnostic_reward_plots
+
+        with diagnostic_reward_plots(lambda: self.policy):
+            super().setup()
         self._setup_recording_gui()
 
     def _setup_recording_gui(self) -> None:
