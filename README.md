@@ -76,7 +76,27 @@ Ball physics are resampled on every episode reset: mass and inertia scale
 together by 0.75–1.25×, sliding friction spans 0.25–0.8, torsional friction
 0.0005–0.006 m, and rolling resistance 0.03–0.09 (converted to MuJoCo's rolling
 friction coefficient for the ball radius). Ball size and center of mass stay
-fixed. Actor and critic still receive exact simulator ball position and velocity.
+fixed. The critic receives exact simulator ball position and velocity. The actor
+receives only a simulated ball detection: robot-yaw-frame position and a detection
+flag, with no privileged ball velocity. The detector uses 3 cm Gaussian position
+noise, an independent per-axis ±5 cm bias sampled once per episode, a 120°
+horizontal FOV with 4 m planar range, 10% false negatives, and 2% false positives.
+False positives can replace real detections and report a random ground-ball
+position inside the FOV; misses return zero position and flag. This is a geometric
+FOV model without rendering or occlusion checks.
+
+Position and flag share a randomized 0–4 control-step delay (0–80 ms at 50 Hz),
+with a 0.3 probability of retaining the previous lag. The actor gets eight frames
+of all its inputs, including proprioception, previous actions, commands, and
+delayed detections. History is flattened in term-major order; resets clear delay
+and history buffers and resample only the resetting environments' biases.
+Perception effects remain active during play. Parameters are configured in
+`tasks/dribble/env_cfg.py`. The actor input layout has changed, so existing
+dribble checkpoints need retraining.
+
+T1 and K1 already include actuator target delay: 2–8 simulation steps with a
+0.3 delay-hold probability (10–40 ms at the default 5 ms physics timestep),
+separately from ball observation latency.
 
 ```bash
 uv run train Mjlab-Dribble-Flat-Amp-Booster-T1 \

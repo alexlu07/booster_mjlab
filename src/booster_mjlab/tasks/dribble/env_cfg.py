@@ -25,6 +25,7 @@ from booster_mjlab.tasks.velocity.config.t1.env_cfgs import (
 )
 
 from . import mdp
+from .perception import ACTOR_HISTORY_LENGTH, BallDetection
 
 
 def booster_t1_dribble_env_cfg(runner_cfg, play=False):
@@ -81,8 +82,29 @@ def booster_t1_dribble_env_cfg(runner_cfg, play=False):
             func=velocity_mdp.generated_commands,
             params={"command_name": "ball_velocity"},
         )
-        terms["ball_position"] = ObservationTermCfg(func=mdp.ball_position)
-        terms["ball_velocity"] = ObservationTermCfg(func=mdp.ball_velocity)
+
+    actor = cfg.observations["actor"]
+    actor.history_length = ACTOR_HISTORY_LENGTH
+    actor.flatten_history_dim = True
+    # One packet keeps the detection flag aligned with the delayed position.
+    # Perception remains enabled in play; it is the actor's sensor model.
+    actor.terms["ball_detection"] = ObservationTermCfg(
+        func=BallDetection,
+        params={
+            "position_noise_std": 0.03,
+            "bias_range": 0.05,
+            "horizontal_fov": math.radians(120),
+            "max_distance": 4.0,
+            "false_positive_probability": 0.02,
+            "false_negative_probability": 0.1,
+        },
+        delay_min_lag=0,
+        delay_max_lag=4,
+        delay_hold_prob=0.3,
+    )
+    critic_terms = cfg.observations["critic"].terms
+    critic_terms["ball_position"] = ObservationTermCfg(func=mdp.ball_position)
+    critic_terms["ball_velocity"] = ObservationTermCfg(func=mdp.ball_velocity)
 
     # Appended after AMP's robot reset so the ball follows the sampled robot pose.
     cfg.events["reset_ball"] = EventTermCfg(
