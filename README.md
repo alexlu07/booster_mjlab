@@ -72,6 +72,26 @@ the previous command heading. Training and play use fixed speed ranges of
 0.2–0.8 m/s and heading changes of ±45°. Explicit stop commands are disabled;
 ball velocity tracking retains its fixed 0.3 m/s tolerance.
 
+The default tracker matches exact instantaneous velocity. For a minimum-speed
+experiment, add
+`--env.rewards.track-ball-velocity.params.allow-overspeed True` to training:
+forward speed above the command is free, while speed shortfall and perpendicular
+velocity are penalized with the same 0.3 m/s tolerance. Zero-speed commands
+retain the original stopping reward. No velocity averaging window is used.
+
+Ball proximity has weight 0.5 and uses planar distance from the robot root:
+full reward through 0.4 m, then `exp(-((distance - 0.4) / 0.5)^2)` beyond it.
+The unweighted reward is about 0.37 at 0.9 m and 0.018 at 1.4 m; the 3 m
+termination threshold is separate.
+
+To train stopping near the ball, combine the minimum-speed experiment with
+`--env.commands.ball-velocity.zero-speed-probability 0.2` and
+`--env.rewards.stand-still-near-ball.weight 1.0`. The stillness bonus applies only
+to commands below 0.001 m/s and planar ball distances below 0.5 m; it decays as
+`exp(-robot_speed_xy² / 0.1² - robot_yaw_rate² / 0.2²)`. The tracker separately
+rewards stopping the ball. Commands still last 3–6 seconds. Both stop sampling
+and the stillness bonus are disabled by default for the original comparisons.
+
 Ball physics are resampled on every episode reset: mass and inertia scale
 together by 0.75–1.25×, sliding friction spans 0.25–0.8, torsional friction
 0.0005–0.006 m, and rolling resistance 0.03–0.09 (converted to MuJoCo's rolling
@@ -116,6 +136,13 @@ also includes the current play configuration's AMP weight and timestep scaling.
 The discriminator's minibatch-standard-deviation feature is zero with one
 environment, so scores can differ from a training batch. The reward bars show
 roughly one-second running averages; reward plots show individual viewer samples.
+
+Dribble playback restores reward weights, ball-tracking parameters, and command
+sampling from the selected W&B run's saved `env_cfg`, or from `params/env.yaml`
+beside a local checkpoint. This keeps minimum-speed, zero-task-reward, and
+stop-command experiments consistent with their reward plots. Startup prints the
+restored tracking mode and stop probability. A standalone checkpoint without
+saved configuration falls back to task defaults with a warning.
 
 ```bash
 uv run train Mjlab-Dribble-Flat-Amp-Booster-T1 \

@@ -147,9 +147,21 @@ def booster_t1_dribble_env_cfg(runner_cfg, play=False):
     ):
         cfg.rewards.pop(name)
     cfg.rewards["track_ball_velocity"] = RewardTermCfg(
-        func=mdp.track_ball_velocity, weight=4.25
+        func=mdp.track_ball_velocity, weight=4.25,
+        params={"allow_overspeed": False},
     )
     cfg.rewards["ball_proximity"] = RewardTermCfg(func=mdp.ball_proximity, weight=0.5)
+    # Opt into the stop-command experiment with command probability and weight
+    # overrides, keeping the existing comparisons' default reward unchanged.
+    cfg.rewards["stand_still_near_ball"] = RewardTermCfg(
+        func=mdp.stand_still_near_ball, weight=0.0,
+        params={
+            "distance": 0.5,
+            "linear_std": 0.1,
+            "yaw_std": 0.2,
+            "command_threshold": 1.0e-3,
+        },
+    )
     cfg.rewards["action_rate_l2"].weight = -0.2
     cfg.rewards["nonfoot_ball_contact"] = RewardTermCfg(
         func=mdp.nonfoot_ball_contact,

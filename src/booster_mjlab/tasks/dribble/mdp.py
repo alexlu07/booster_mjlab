@@ -181,14 +181,52 @@ def ball_command_curriculum(env, env_ids, stages):
     }
 
 
-def track_ball_velocity(env, std=0.3):
-    error = ball_velocity(env) - env.command_manager.get_command("ball_velocity")
-    return torch.exp(-error.square().sum(dim=-1) / std**2)
+def track_ball_velocity(env, std=0.3, allow_overspeed=False):
+    """Track exact velocity, or a minimum forward speed with no lateral slip.
+
+    Overspeed mode uses only the current command and velocity. For a stop
+    command, retain the exact tracker's penalty on motion in every direction.
+    """
+    velocity = ball_velocity(env)
+    command = env.command_manager.get_command("ball_velocity")
+    if not allow_overspeed:
+        error = (velocity - command).square().sum(dim=-1)
+    else:
+        command_speed = command.norm(dim=-1)
+        direction = command / command_speed.clamp_min(1.0e-6)[:, None]
+        forward_speed = (velocity * direction).sum(dim=-1)
+        sideways_velocity = velocity - forward_speed[:, None] * direction
+        shortfall = (command_speed - forward_speed).clamp_min(0.0)
+        moving_error = shortfall.square() + sideways_velocity.square().sum(dim=-1)
+        error = torch.where(
+            command_speed > 1.0e-6,
+            moving_error,
+            velocity.square().sum(dim=-1),
+        )
+    return torch.exp(-error / std**2)
 
 
 def ball_proximity(env, distance=0.4, std=0.5):
     excess = (ball_position(env)[:, :2].norm(dim=-1) - distance).clamp_min(0.0)
     return torch.exp(-(excess / std).square())
+
+
+def stand_still_near_ball(
+    env, distance=0.5, linear_std=0.1, yaw_std=0.2, command_threshold=1.0e-3
+):
+    """Reward a stationary robot near the ball only during stop commands.
+
+    Ball stopping is handled independently by track_ball_velocity. This term
+    discourages shuffling and turning while waiting beside the stopped ball.
+    """
+    command = env.command_manager.get_command("ball_velocity")
+    is_stop = command.norm(dim=-1) < command_threshold
+    near_ball = ball_position(env)[:, :2].norm(dim=-1) < distance
+    robot = env.scene["robot"]
+    linear_error = robot.data.root_link_lin_vel_w[:, :2].square().sum(dim=-1)
+    yaw_error = robot.data.root_link_ang_vel_w[:, 2].square()
+    stillness = torch.exp(-linear_error / linear_std**2 - yaw_error / yaw_std**2)
+    return is_stop * near_ball * stillness
 
 
 def ball_too_far(env, max_distance=3.0):

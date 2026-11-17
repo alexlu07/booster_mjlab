@@ -13,6 +13,7 @@ import mjlab.scripts.play as mjlab_play
 
 from booster_mjlab.viewer import DEFAULT_VIDEO_DIR, RecordingViserPlayViewer
 from booster_mjlab.viewer.play_diagnostics import diagnostics_runner_class
+from booster_mjlab.scripts.play_config import install_experiment_config
 
 
 def _pop_flag(argv: list[str], flag: str) -> str | None:
@@ -86,6 +87,7 @@ def main() -> None:
         video_dir=record_dir or DEFAULT_VIDEO_DIR,
     )
 
+    install_experiment_config(mjlab_play)
     mjlab_play.main()
 
 
