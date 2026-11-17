@@ -98,6 +98,12 @@ T1 and K1 already include actuator target delay: 2–8 simulation steps with a
 0.3 delay-hold probability (10–40 ms at the default 5 ms physics timestep),
 separately from ball observation latency.
 
+In Viser, **Commands → Ball velocity** provides a **Manual control** toggle,
+ball-speed and robot-relative direction sliders (0° forward, +90° left), and a
+**Stop ball command** button. Controls affect the selected environment; manual
+commands persist through episode resets. Disabling manual control resumes
+automatic commands at the next scheduled resample (within 3–6 seconds).
+
 ```bash
 uv run train Mjlab-Dribble-Flat-Amp-Booster-T1 \
     --agent.dataset-root /path/to/gmr_t1_motions \
