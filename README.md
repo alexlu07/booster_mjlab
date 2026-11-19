@@ -79,6 +79,23 @@ forward speed above the command is free, while speed shortfall and perpendicular
 velocity are penalized with the same 0.3 m/s tolerance. Zero-speed commands
 retain the original stopping reward. No velocity averaging window is used.
 
+`--ball-command-curriculum True` selects minimum-speed tracking and these
+absolute PPO iteration stages (24 environment control steps per iteration):
+
+| Iterations | Commanded speed | Heading change |
+| --- | --- | --- |
+| 0–15,000 | 0.2–0.8 m/s | ±45° |
+| 15,000–20,000 | 0.2–1.2 m/s | ±45° |
+| 20,000–25,000 | 0.2–1.2 m/s | ±90° |
+| 25,000–30,000 | 0–1.2 m/s | ±90° |
+
+The final range is uniform; it does not add explicit zero-speed samples.
+Stages use the restored environment counter when resuming.
+
+Add `--fixed-soft-landing True` to remove the soft-landing weight curriculum
+and apply its final penalty, −0.005, from the start. The ball-command and AMP
+curricula remain active.
+
 Ball proximity has weight 0.5 and uses planar distance from the robot root:
 full reward through 0.4 m, then `exp(-((distance - 0.4) / 0.5)^2)` beyond it.
 The unweighted reward is about 0.37 at 0.9 m and 0.018 at 1.4 m; the 3 m

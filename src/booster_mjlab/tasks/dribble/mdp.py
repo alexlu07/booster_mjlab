@@ -176,6 +176,7 @@ def ball_command_curriculum(env, env_ids, stages):
             cfg.speed_range = stage["speed_range"]
             cfg.heading_change_range = stage["heading_change_range"]
     return {
+        "speed_min": torch.tensor(cfg.speed_range[0]),
         "speed_max": torch.tensor(cfg.speed_range[1]),
         "heading_change_max": torch.tensor(cfg.heading_change_range[1]),
     }

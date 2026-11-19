@@ -7,7 +7,7 @@ Adds:
 """
 
 import sys
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Literal
 
 import tyro
@@ -33,6 +33,10 @@ class TrainConfig:
     enable_nan_guard: bool = False
     log_root: str = "logs/rsl_rl"
     """Root directory under which experiment logs are written."""
+    ball_command_curriculum: bool = False
+    """Use minimum-speed dribbling with command stages at 15k/20k/25k iterations."""
+    fixed_soft_landing: bool = False
+    """Remove the soft-landing weight curriculum and use its final penalty from step zero."""
     torchrunx_log_dir: str | None = None
     wandb_run_path: str | None = None
     wandb_checkpoint_name: str | None = None
@@ -72,11 +76,33 @@ def _sync_amp_dataset_root(args: TrainConfig) -> None:
         reset_event.params["dataset_root"] = dataset_root
 
 
+def _patch_wandb_resume_config() -> None:
+    """Keep original W&B config when continuing an existing W&B run."""
+    import wandb
+    from rsl_rl.utils import WandbLogWriter
+
+    original_store_config = WandbLogWriter.store_config
+
+    def store_config(self, env_cfg, train_cfg):
+        if wandb.run is not None and wandb.run.resumed:
+            saved_env = env_cfg if isinstance(env_cfg, dict) else asdict(env_cfg)
+            wandb.config.update(
+                {"resume_train_cfg": train_cfg, "resume_env_cfg": saved_env},
+                allow_val_change=True,
+            )
+        else:
+            original_store_config(self, env_cfg, train_cfg)
+
+    WandbLogWriter.store_config = store_config
+
+
 def _run_train(task_id, args, log_dir):
     """Install integrations inside each worker, including torchrunx workers."""
     import mjlab.scripts.train as train_mod
 
     _patch_dump_yaml()
+    if args.agent.resume:
+        _patch_wandb_resume_config()
     if args.video:
         from booster_mjlab.scripts.video_recorder import WandbVideoRecorder
 
@@ -106,6 +132,14 @@ def main():
     del remaining_args
 
     _sync_amp_dataset_root(args)
+    if args.ball_command_curriculum:
+        from booster_mjlab.tasks.dribble.env_cfg import configure_minimum_speed_curriculum
+
+        configure_minimum_speed_curriculum(args.env, args.agent.num_steps_per_env)
+    if args.fixed_soft_landing:
+        from booster_mjlab.tasks.dribble.env_cfg import configure_fixed_soft_landing
+
+        configure_fixed_soft_landing(args.env)
     import mjlab.scripts.train as train_mod
 
     train_mod.run_train = _run_train

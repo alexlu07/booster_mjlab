@@ -52,6 +52,11 @@ def restore_dribble_settings(env_cfg, saved):
     Keep play's sensor, terrain, termination, and entity settings. In particular,
     serialized scene-entity dictionaries must not replace resolved config objects.
     """
+    if "curriculum" in saved and "soft_landing_weight" not in (saved["curriculum"] or {}):
+        # A fixed-penalty experiment must not regain the default weight schedule
+        # during playback resets and overwrite its restored reward weight.
+        if getattr(env_cfg, "curriculum", None):
+            env_cfg.curriculum.pop("soft_landing_weight", None)
     for name, term in env_cfg.rewards.items():
         source = saved.get("rewards", {}).get(name)
         if term is None or not isinstance(source, dict):

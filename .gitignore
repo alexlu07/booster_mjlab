@@ -1,4 +1,4 @@
-wandb/
+/wandb
 artifacts/
 
 # Local datasets and generated videos
@@ -21,7 +21,7 @@ wheels/
 # Virtual environments
 .venv
 
-logs/
+/logs
 
 .ruff_cache/
 

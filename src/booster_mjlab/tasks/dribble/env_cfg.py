@@ -28,6 +28,48 @@ from . import mdp
 from .perception import ACTOR_HISTORY_LENGTH, BallDetection
 
 
+def minimum_speed_command_stages(num_steps_per_env):
+    """Progressive command ranges at absolute PPO iteration boundaries."""
+    return [
+        {
+            "step": iteration * num_steps_per_env,
+            "speed_range": (min_speed, max_speed),
+            "heading_change_range": (-math.radians(angle), math.radians(angle)),
+        }
+        for iteration, min_speed, max_speed, angle in (
+            (0, 0.2, 0.8, 45),
+            (15000, 0.2, 1.2, 45),
+            (20000, 0.2, 1.2, 90),
+            (25000, 0.0, 1.2, 90),
+        )
+    ]
+
+
+def configure_minimum_speed_curriculum(cfg, num_steps_per_env):
+    """Opt into the progressive experiment without changing fixed-range tasks."""
+    if "ball_velocity" not in (cfg.commands or {}):
+        raise ValueError("The ball command curriculum requires a dribble task.")
+    stages = minimum_speed_command_stages(num_steps_per_env)
+    command = cfg.commands["ball_velocity"]
+    command.speed_range = stages[0]["speed_range"]
+    command.heading_change_range = stages[0]["heading_change_range"]
+    command.zero_speed_probability = 0.0
+    cfg.rewards["track_ball_velocity"].params["allow_overspeed"] = True
+    if cfg.curriculum is None:
+        cfg.curriculum = {}
+    cfg.curriculum["ball_command"] = CurriculumTermCfg(
+        func=mdp.ball_command_curriculum, params={"stages": stages}
+    )
+
+
+def configure_fixed_soft_landing(cfg):
+    """Apply the final soft-landing penalty throughout the experiment."""
+    schedule = (cfg.curriculum or {}).pop("soft_landing_weight", None)
+    cfg.rewards["soft_landing"].weight = (
+        schedule.params["stages"][-1]["weight"] if schedule is not None else -0.005
+    )
+
+
 def booster_t1_dribble_env_cfg(runner_cfg, play=False):
     cfg = booster_t1_flat_env_cfg(play=play)
     cfg = with_amp_obs_group(
